@@ -1,6 +1,6 @@
 # Demo 配置 - 使用 Ollama 作为后端
 
-listen: ":8080"
+listen: ":8000"
 
 backends:
   - url: "http://ollama:11434"

@@ -33,7 +33,7 @@ vim config.yaml
 # 3. Run container
 docker run -d \
   --name llmproxy \
-  -p 8080:8080 \
+  -p 8000:8000 \
   -v $(pwd)/config.yaml:/home/llmproxy/config.yaml \
   ghcr.io/aiyuekuang/llmproxy:latest
 ```
@@ -64,7 +64,7 @@ docker compose up -d
 ```
 
 Access:
-- LLMProxy: http://localhost:8080
+- LLMProxy: http://localhost:8000
 - Prometheus: http://localhost:9090
 - Grafana: http://localhost:3000 (admin/admin)
 
@@ -72,7 +72,7 @@ Access:
 
 ```yaml
 # Listen address
-listen: ":8080"
+listen: ":8000"
 
 # Backend server list
 backends:
@@ -162,7 +162,7 @@ LLMProxy exposes Prometheus metrics at `/metrics`:
 ### Non-Streaming Request
 
 ```bash
-curl http://localhost:8080/v1/chat/completions \
+curl http://localhost:8000/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "meta-llama/Llama-3-8b-Instruct",
@@ -174,7 +174,7 @@ curl http://localhost:8080/v1/chat/completions \
 ### Streaming Request
 
 ```bash
-curl http://localhost:8080/v1/chat/completions \
+curl http://localhost:8000/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "meta-llama/Llama-3-8b-Instruct",
@@ -266,7 +266,7 @@ LLMProxy will automatically retry (based on configured `retry` count). Failures 
 
 ### 3. How to view monitoring metrics?
 
-Visit `http://localhost:8080/metrics` to see Prometheus metrics.
+Visit `http://localhost:8000/metrics` to see Prometheus metrics.
 
 ### 4. What load balancing strategies are supported?
 

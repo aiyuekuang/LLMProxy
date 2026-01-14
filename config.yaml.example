@@ -1,7 +1,7 @@
 # LLMProxy 配置文件示例
 
 # 监听地址
-listen: ":8080"
+listen: ":8000"
 
 # 后端服务器列表
 backends:

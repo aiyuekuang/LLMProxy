@@ -72,10 +72,10 @@ docker compose -f docker-compose-demo.yml logs webhook-receiver
 
 ## 访问服务
 
-- **LLMProxy**: http://localhost:8080
+- **LLMProxy**: http://localhost:8000
 - **Ollama**: http://localhost:11434
 - **Webhook 接收器**: http://localhost:3001
-- **Prometheus 指标**: http://localhost:8080/metrics
+- **Prometheus 指标**: http://localhost:8000/metrics
 
 ## 手动测试
 
@@ -180,7 +180,7 @@ ollama pull qwen2.5:3b
 # Ubuntu: sudo apt-get install apache2-utils
 
 # 并发测试
-ab -n 100 -c 10 -p request.json -T application/json http://localhost:8080/v1/chat/completions
+ab -n 100 -c 10 -p request.json -T application/json http://localhost:8000/v1/chat/completions
 ```
 
 其中 `request.json`:

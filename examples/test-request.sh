@@ -1,7 +1,7 @@
 #!/bin/bash
 # LLMProxy 测试脚本
 
-LLMPROXY_URL="http://localhost:8080"
+LLMPROXY_URL="http://localhost:8000"
 
 echo "=========================================="
 echo "测试 1: 非流式请求"

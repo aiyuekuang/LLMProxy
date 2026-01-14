@@ -30,7 +30,7 @@ type HealthCheck struct {
 
 // Config 主配置结构
 type Config struct {
-	Listen      string       `yaml:"listen"`       // 监听地址，如 ":8080"
+	Listen      string       `yaml:"listen"`       // 监听地址，如 ":8000"
 	Backends    []Backend    `yaml:"backends"`     // 后端服务器列表
 	UsageHook   *UsageHook   `yaml:"usage_hook"`   // 用量上报配置
 	HealthCheck *HealthCheck `yaml:"health_check"` // 健康检查配置
@@ -55,7 +55,7 @@ func Load(path string) (*Config, error) {
 
 	// 设置默认值
 	if cfg.Listen == "" {
-		cfg.Listen = ":8080"
+		cfg.Listen = ":8000"
 	}
 
 	if cfg.UsageHook != nil && cfg.UsageHook.Timeout == 0 {

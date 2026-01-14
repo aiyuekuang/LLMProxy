@@ -1,7 +1,7 @@
 # 最小化配置 - 仅用于测试 LLMProxy
 # 请修改后端 URL 为你实际的服务地址
 
-listen: ":8080"
+listen: ":8000"
 
 backends:
   # 请修改为你的后端地址

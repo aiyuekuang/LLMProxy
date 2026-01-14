@@ -33,7 +33,7 @@ vim config.yaml
 # 3. 运行容器
 docker run -d \
   --name llmproxy \
-  -p 8080:8080 \
+  -p 8000:8000 \
   -v $(pwd)/config.yaml:/home/llmproxy/config.yaml \
   ghcr.io/aiyuekuang/llmproxy:latest
 ```
@@ -64,7 +64,7 @@ docker compose up -d
 ```
 
 访问：
-- LLMProxy: http://localhost:8080
+- LLMProxy: http://localhost:8000
 - Prometheus: http://localhost:9090
 - Grafana: http://localhost:3000 (admin/admin)
 
@@ -72,7 +72,7 @@ docker compose up -d
 
 ```yaml
 # 监听地址
-listen: ":8080"
+listen: ":8000"
 
 # 后端服务器列表
 backends:
@@ -162,7 +162,7 @@ LLMProxy 暴露 Prometheus 指标（`/metrics`）：
 ### 非流式请求
 
 ```bash
-curl http://localhost:8080/v1/chat/completions \
+curl http://localhost:8000/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "meta-llama/Llama-3-8b-Instruct",
@@ -174,7 +174,7 @@ curl http://localhost:8080/v1/chat/completions \
 ### 流式请求
 
 ```bash
-curl http://localhost:8080/v1/chat/completions \
+curl http://localhost:8000/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "meta-llama/Llama-3-8b-Instruct",
@@ -266,7 +266,7 @@ LLMProxy 会自动重试（根据配置的 `retry` 次数），失败仅记录�
 
 ### 3. 如何查看监控指标？
 
-访问 `http://localhost:8080/metrics` 查看 Prometheus 指标。
+访问 `http://localhost:8000/metrics` 查看 Prometheus 指标。
 
 ### 4. 支持哪些负载均衡策略？
 

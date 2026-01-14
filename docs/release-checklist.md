@@ -79,12 +79,12 @@ docker run --rm ghcr.io/aiyuekuang/llmproxy:v1.0.0 --help
 # 完整功能测试
 docker run -d \
   --name llmproxy-test \
-  -p 8080:8080 \
+  -p 8000:8000 \
   -v $(pwd)/config.yaml:/home/llmproxy/config.yaml \
   ghcr.io/aiyuekuang/llmproxy:v1.0.0
 
 # 健康检查
-curl http://localhost:8080/health
+curl http://localhost:8000/health
 
 # 清理
 docker stop llmproxy-test

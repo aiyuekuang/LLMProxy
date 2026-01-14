@@ -58,7 +58,7 @@
   "configuration": {
     "format": "YAML",
     "example": {
-      "listen": ":8080",
+      "listen": ":8000",
       "backends": [
         {"url": "http://vllm:8000", "weight": 5},
         {"url": "http://tgi:8081", "weight": 3}

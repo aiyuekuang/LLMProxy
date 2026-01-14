@@ -1,7 +1,7 @@
 # 简化配置 - 用于本地测试
 # 请将后端 URL 修改为你实际的 OpenAI 兼容服务地址
 
-listen: ":8080"
+listen: ":8000"
 
 backends:
   # 选项 1: 使用 OpenAI 官方 API（需要 API Key）

@@ -15,7 +15,7 @@ metadata:
   namespace: default
 data:
   config.yaml: |
-    listen: ":8080"
+    listen: ":8000"
     
     backends:
       - url: "http://vllm-service:8000"
@@ -59,7 +59,7 @@ spec:
       - name: llmproxy
         image: ghcr.io/aiyuekuang/llmproxy:v1.0.0
         ports:
-        - containerPort: 8080
+        - containerPort: 8000
           name: http
           protocol: TCP
         - containerPort: 9090
@@ -72,13 +72,13 @@ spec:
         livenessProbe:
           httpGet:
             path: /health
-            port: 8080
+            port: 8000
           initialDelaySeconds: 5
           periodSeconds: 10
         readinessProbe:
           httpGet:
             path: /health
-            port: 8080
+            port: 8000
           initialDelaySeconds: 3
           periodSeconds: 5
         resources:
@@ -113,7 +113,7 @@ metadata:
 spec:
   type: ClusterIP
   ports:
-  - port: 8080
+  - port: 8000
     targetPort: 8080
     protocol: TCP
     name: http

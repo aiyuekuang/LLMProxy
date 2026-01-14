@@ -25,7 +25,7 @@ services:
       context: ..
       dockerfile: Dockerfile
     ports:
-      - "8080:8080"
+      - "8000:8000"
     volumes:
       - ./config-demo.yaml:/etc/llmproxy/config.yaml
     environment:

@@ -1,7 +1,7 @@
 #!/bin/bash
 # LLMProxy Demo 测试脚本
 
-LLMPROXY_URL="http://localhost:8080"
+LLMPROXY_URL="http://localhost:8000"
 
 echo "=========================================="
 echo "LLMProxy Demo 测试"

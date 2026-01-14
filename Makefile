@@ -22,7 +22,7 @@ docker-build:
 
 # 运行 Docker 容器
 docker-run:
-	docker run -d -p 8080:8080 -v $(PWD)/config.yaml:/etc/llmproxy/config.yaml llmproxy:latest
+	docker run -d -p 8000:8000 -v $(PWD)/config.yaml:/etc/llmproxy/config.yaml llmproxy:latest
 
 # 启动 Docker Compose
 compose-up:

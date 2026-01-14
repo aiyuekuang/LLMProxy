@@ -1,0 +1,23 @@
+# LLMProxy 配置文件示例
+
+# 监听地址
+listen: ":8080"
+
+# 后端服务器列表
+backends:
+  - url: "http://localhost:8000"  # vLLM 服务地址
+    weight: 5                       # 权重（用于负载均衡）
+  - url: "http://localhost:8081"  # TGI 服务地址
+    weight: 3
+
+# 用量上报 Webhook 配置
+usage_hook:
+  enabled: true                                    # 是否启用
+  url: "https://your-billing.com/llm-usage"      # Webhook URL
+  timeout: 1s                                      # 超时时间
+  retry: 2                                         # 重试次数
+
+# 健康检查配置
+health_check:
+  interval: 10s      # 检查间隔
+  path: /health      # 健康检查路径

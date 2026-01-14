@@ -1,0 +1,118 @@
+{
+  "project": {
+    "name": "LLMProxy",
+    "version": "1.0.0",
+    "description": "面向大模型服务的高性能网关，支持流式/非流式无缝代理 + 异步用量计量",
+    "language": "Go",
+    "architecture": "单体架构"
+  },
+  "modules": {
+    "cmd": {
+      "name": "应用入口",
+      "path": "cmd/main.go",
+      "documentation": "程序主入口，负责：1. 解析命令行参数（配置文件路径）2. 加载配置 3. 初始化各模块 4. 启动 HTTP 服务器 5. 注册路由（/metrics、/health、代理路由）",
+      "dependencies": ["config", "proxy", "metrics"]
+    },
+    "config": {
+      "name": "配置管理模块",
+      "path": "internal/config/",
+      "documentation": "负责配置文件的解析和管理。配置项包括：1. 监听地址（listen）2. 后端列表（backends：url、weight）3. Webhook 配置（usage_hook：enabled、url、timeout、retry）4. 健康检查配置（health_check：interval、path）。使用 YAML 格式，通过 gopkg.in/yaml.v3 解析",
+      "files": {
+        "config.go": "定义 Config 结构体和 Load 函数，支持从文件路径加载配置"
+      }
+    },
+    "proxy": {
+      "name": "核心代理引擎",
+      "path": "internal/proxy/",
+      "documentation": "核心模块，负责请求代理和用量收集。关键实现：1. 仅处理 /v1/chat/completions 和 /v1/completions 路径 2. 读取请求体并解析 stream 参数 3. 通过负载均衡器选择后端 4. 使用 io.Copy 零缓冲转发响应（流式：text/event-stream，非流式：application/json）5. 请求结束后启动 goroutine 异步收集用量并上报",
+      "files": {
+        "handler.go": "实现 NewHandler 函数，返回 http.HandlerFunc。处理请求代理的主流程，包括：请求验证、body 读取、stream 参数解析、后端选择、请求转发、响应透传、异步用量上报触发",
+        "usage_hook.go": "实现用量收集和 Webhook 上报。包含：1. collectUsage 函数：从响应中提取 usage 字段（prompt_tokens、completion_tokens、total_tokens）2. SendUsageWebhook 函数：通过 HTTP POST 发送用量数据到配置的 Webhook URL，支持超时和重试"
+      }
+    },
+    "lb": {
+      "name": "负载均衡器",
+      "path": "internal/lb/",
+      "documentation": "负载均衡模块，支持多种策略。当前实现轮询（Round Robin）算法。功能：1. 维护后端列表 2. 根据权重选择后端 3. 健康检查（定期探测后端 /health 接口）4. 自动摘除不健康节点 5. 线程安全（使用 sync.Mutex）",
+      "files": {
+        "roundrobin.go": "实现轮询负载均衡器。包含 Backend 结构体（URL、Weight、Healthy）、LoadBalancer 接口、RoundRobin 结构体和 Next 方法"
+      }
+    },
+    "metrics": {
+      "name": "监控指标模块",
+      "path": "internal/metrics/",
+      "documentation": "Prometheus 监控指标模块。提供的指标：1. llmproxy_requests_total（请求总数，标签：path、stream、backend、status）2. llmproxy_latency_ms（延迟直方图）3. llmproxy_webhook_success_total（Webhook 成功数）4. llmproxy_webhook_failure_total（Webhook 失败数）5. llmproxy_usage_tokens_total（token 使用量，标签：type=prompt/completion）",
+      "files": {
+        "metrics.go": "定义 Prometheus 指标并注册。提供 RecordRequest、RecordUsage、RecordWebhook 等函数，以及 Handler 函数用于暴露 /metrics 接口"
+      }
+    }
+  },
+  "deployment": {
+    "docker": {
+      "documentation": "Docker 部署方案。Dockerfile 使用多阶段构建：1. builder 阶段：基于 golang:1.22，编译生成二进制 2. 运行阶段：基于 alpine:latest，仅包含二进制和配置文件。docker-compose.yml 包含 vLLM 和 LLMProxy 服务，vLLM 需启用 --return-detailed-tokens 参数"
+    },
+    "kubernetes": {
+      "documentation": "Kubernetes 部署方案。提供 Helm Chart，包含：1. Deployment（支持副本数配置）2. Service（ClusterIP）3. ConfigMap（配置注入）4. ServiceMonitor（Prometheus 集成）。values.yaml 支持自定义镜像、副本数、后端列表、Webhook 配置等"
+    }
+  },
+  "configuration": {
+    "format": "YAML",
+    "example": {
+      "listen": ":8080",
+      "backends": [
+        {"url": "http://vllm:8000", "weight": 5},
+        {"url": "http://tgi:8081", "weight": 3}
+      ],
+      "usage_hook": {
+        "enabled": true,
+        "url": "https://your-billing.com/llm-usage",
+        "timeout": "1s",
+        "retry": 2
+      },
+      "health_check": {
+        "interval": "10s",
+        "path": "/health"
+      }
+    }
+  },
+  "monitoring": {
+    "prometheus": {
+      "documentation": "Prometheus 监控集成。LLMProxy 暴露 /metrics 接口，提供请求量、延迟、Webhook 状态等指标。支持通过 ServiceMonitor 自动发现"
+    },
+    "grafana": {
+      "documentation": "Grafana 监控面板。提供预配置的 dashboard.json，包含：1. 请求速率面板 2. P99 延迟面板 3. Webhook 成功率面板 4. Token 使用量面板 5. 后端健康状态面板"
+    }
+  },
+  "features": {
+    "streaming": {
+      "enabled": true,
+      "documentation": "零缓冲流式传输。通过 io.Copy 实现，支持 SSE（Server-Sent Events）协议。自动识别请求中的 stream 参数，流式请求设置 Content-Type: text/event-stream"
+    },
+    "load_balancing": {
+      "enabled": true,
+      "strategy": "round_robin",
+      "documentation": "负载均衡策略为轮询（Round Robin），支持权重配置。健康检查每 10 秒探测一次后端 /health 接口，不健康节点自动摘除"
+    },
+    "usage_metering": {
+      "enabled": true,
+      "async": true,
+      "documentation": "异步用量计量。请求结束后启动 goroutine 收集用量数据（从响应的 usage 字段提取），通过 HTTP Webhook 上报。上报失败仅记录日志，不影响主流程。支持的后端：vLLM（需启用 --return-detailed-tokens）、TGI（默认支持）"
+    },
+    "authentication": {
+      "enabled": false,
+      "documentation": "API Key 鉴权功能未启用，由上游网关处理"
+    },
+    "rate_limiting": {
+      "enabled": false,
+      "documentation": "限流功能未启用，初期不需要"
+    },
+    "multi_tenancy": {
+      "enabled": false,
+      "documentation": "多租户功能未启用"
+    }
+  },
+  "logging": {
+    "format": "structured_json",
+    "documentation": "使用结构化日志（JSON 格式），便于日志聚合和分析。日志级别：INFO、WARN、ERROR。关键日志点：1. 请求开始/结束 2. 后端选择 3. Webhook 上报成功/失败 4. 健康检查状态变化"
+  }
+}

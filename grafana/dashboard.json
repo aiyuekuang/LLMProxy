@@ -1,0 +1,114 @@
+{
+  "dashboard": {
+    "title": "LLMProxy 监控面板",
+    "tags": ["llmproxy", "llm", "proxy"],
+    "timezone": "browser",
+    "panels": [
+      {
+        "id": 1,
+        "title": "请求速率（QPS）",
+        "type": "graph",
+        "gridPos": {"x": 0, "y": 0, "w": 12, "h": 8},
+        "targets": [
+          {
+            "expr": "rate(llmproxy_requests_total[1m])",
+            "legendFormat": "{{path}} - {{stream}} - {{backend}}"
+          }
+        ]
+      },
+      {
+        "id": 2,
+        "title": "P99 延迟（毫秒）",
+        "type": "graph",
+        "gridPos": {"x": 12, "y": 0, "w": 12, "h": 8},
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.99, rate(llmproxy_latency_ms_bucket[1m]))",
+            "legendFormat": "P99 - {{backend}}"
+          },
+          {
+            "expr": "histogram_quantile(0.95, rate(llmproxy_latency_ms_bucket[1m]))",
+            "legendFormat": "P95 - {{backend}}"
+          },
+          {
+            "expr": "histogram_quantile(0.50, rate(llmproxy_latency_ms_bucket[1m]))",
+            "legendFormat": "P50 - {{backend}}"
+          }
+        ]
+      },
+      {
+        "id": 3,
+        "title": "Webhook 成功率",
+        "type": "graph",
+        "gridPos": {"x": 0, "y": 8, "w": 12, "h": 8},
+        "targets": [
+          {
+            "expr": "rate(llmproxy_webhook_success_total[1m])",
+            "legendFormat": "成功"
+          },
+          {
+            "expr": "rate(llmproxy_webhook_failure_total[1m])",
+            "legendFormat": "失败"
+          }
+        ]
+      },
+      {
+        "id": 4,
+        "title": "Token 使用量",
+        "type": "graph",
+        "gridPos": {"x": 12, "y": 8, "w": 12, "h": 8},
+        "targets": [
+          {
+            "expr": "rate(llmproxy_usage_tokens_total{type=\"prompt\"}[1m])",
+            "legendFormat": "输入 Token"
+          },
+          {
+            "expr": "rate(llmproxy_usage_tokens_total{type=\"completion\"}[1m])",
+            "legendFormat": "输出 Token"
+          }
+        ]
+      },
+      {
+        "id": 5,
+        "title": "请求状态码分布",
+        "type": "piechart",
+        "gridPos": {"x": 0, "y": 16, "w": 8, "h": 8},
+        "targets": [
+          {
+            "expr": "sum by (status) (llmproxy_requests_total)",
+            "legendFormat": "{{status}}"
+          }
+        ]
+      },
+      {
+        "id": 6,
+        "title": "流式 vs 非流式请求",
+        "type": "piechart",
+        "gridPos": {"x": 8, "y": 16, "w": 8, "h": 8},
+        "targets": [
+          {
+            "expr": "sum by (stream) (llmproxy_requests_total)",
+            "legendFormat": "stream={{stream}}"
+          }
+        ]
+      },
+      {
+        "id": 7,
+        "title": "后端请求分布",
+        "type": "piechart",
+        "gridPos": {"x": 16, "y": 16, "w": 8, "h": 8},
+        "targets": [
+          {
+            "expr": "sum by (backend) (llmproxy_requests_total)",
+            "legendFormat": "{{backend}}"
+          }
+        ]
+      }
+    ],
+    "refresh": "10s",
+    "time": {
+      "from": "now-1h",
+      "to": "now"
+    }
+  }
+}

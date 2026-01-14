@@ -5,6 +5,8 @@
 [![Docker Build](https://github.com/aiyuekuang/LLMProxy/actions/workflows/release.yml/badge.svg)](https://github.com/aiyuekuang/LLMProxy/actions/workflows/release.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Go Version](https://img.shields.io/github/go-mod/go-version/aiyuekuang/LLMProxy)](go.mod)
+[![GitHub Stars](https://img.shields.io/github/stars/aiyuekuang/LLMProxy?style=social)](https://github.com/aiyuekuang/LLMProxy/stargazers)
+[![GitHub Forks](https://img.shields.io/github/forks/aiyuekuang/LLMProxy?style=social)](https://github.com/aiyuekuang/LLMProxy/network/members)
 
 ## 核心特性
 
@@ -270,8 +272,44 @@ LLMProxy 会自动重试（根据配置的 `retry` 次数），失败仅记录�
 
 ## 许可证
 
-MIT License
+本项目采用 [MIT License](LICENSE) 开源协议。
+
+这意味着你可以：
+- ✅ 自由使用、修改和分发本软件
+- ✅ 用于商业项目
+- ✅ 创建衍生作品
+
+唯一要求：保留原始版权声明和许可证声明。
 
 ## 贡献
 
-欢迎提交 Issue 和 Pull Request！
+我们欢迎所有形式的贡献！查看 [CONTRIBUTORS.md](CONTRIBUTORS.md) 了解贡献者名单。
+
+### 如何贡献
+
+1. Fork 本仓库
+2. 创建特性分支 (`git checkout -b feature/AmazingFeature`)
+3. 提交修改 (`git commit -m 'Add some AmazingFeature'`)
+4. 推送到分支 (`git push origin feature/AmazingFeature`)
+5. 开启 Pull Request
+
+详细贡献指南请参考 [CONTRIBUTORS.md](CONTRIBUTORS.md)。
+
+## 支持项目
+
+如果 LLMProxy 对你有帮助，请考虑：
+
+- ⭐ 给项目点个 Star
+- 🐛 报告 Bug 或提出改进建议
+- 📝 改进文档或添加示例
+- 💬 在社区中分享你的使用经验
+- 🔗 在你的项目中添加 "Powered by LLMProxy" 徽章：
+
+```markdown
+[![Powered by LLMProxy](https://img.shields.io/badge/Powered%20by-LLMProxy-blue)](https://github.com/aiyuekuang/LLMProxy)
+```
+
+## 联系方式
+
+- 📧 Issues: [GitHub Issues](https://github.com/aiyuekuang/LLMProxy/issues)
+- 💬 Discussions: [GitHub Discussions](https://github.com/aiyuekuang/LLMProxy/discussions)

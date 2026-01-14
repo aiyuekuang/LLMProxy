@@ -1,0 +1,26 @@
+version: '3.8'
+
+services:
+  # LLMProxy 服务
+  llmproxy:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./config-minimal.yaml:/etc/llmproxy/config.yaml
+    environment:
+      - TZ=Asia/Shanghai
+    restart: unless-stopped
+
+  # Webhook 接收服务（用于测试用量上报）
+  webhook-receiver:
+    image: python:3.11-slim
+    ports:
+      - "3001:3001"
+    volumes:
+      - ../examples/webhook-receiver.py:/app/webhook-receiver.py
+    working_dir: /app
+    command: >
+      sh -c "pip install flask && python webhook-receiver.py"

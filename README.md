@@ -2,6 +2,10 @@
 
 面向大模型服务的高性能网关，支持流式/非流式无缝代理 + 异步用量计量（HTTP Webhook）。
 
+[![Docker Build](https://github.com/aiyuekuang/LLMProxy/actions/workflows/release.yml/badge.svg)](https://github.com/aiyuekuang/LLMProxy/actions/workflows/release.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Go Version](https://img.shields.io/github/go-mod/go-version/aiyuekuang/LLMProxy)](go.mod)
+
 ## 核心特性
 
 - ✅ **LLM 协议感知代理** - 自动识别 `/v1/chat/completions` 请求中的 `stream=true/false`
@@ -13,7 +17,26 @@
 
 ## 快速开始
 
-### 1. 本地运行
+### 方式一：使用官方镜像（推荐）
+
+```bash
+# 1. 创建配置文件
+curl -o config.yaml https://raw.githubusercontent.com/aiyuekuang/LLMProxy/main/config.yaml.example
+
+# 2. 编辑配置文件，修改后端地址
+vim config.yaml
+
+# 3. 运行容器
+docker run -d \
+  --name llmproxy \
+  -p 8080:8080 \
+  -v $(pwd)/config.yaml:/home/llmproxy/config.yaml \
+  ghcr.io/aiyuekuang/llmproxy:latest
+```
+
+**支持架构：** `linux/amd64`, `linux/arm64`
+
+### 方式二：本地构建
 
 ```bash
 # 下载依赖
@@ -29,20 +52,7 @@ vim config.yaml
 go run cmd/main.go --config config.yaml
 ```
 
-### 2. Docker 部署
-
-```bash
-# 构建镜像
-docker build -t llmproxy:latest .
-
-# 运行容器
-docker run -d \
-  -p 8080:8080 \
-  -v $(pwd)/config.yaml:/etc/llmproxy/config.yaml \
-  llmproxy:latest
-```
-
-### 3. Docker Compose（含 vLLM）
+### 方式三：Docker Compose（含 vLLM）
 
 ```bash
 cd deployments

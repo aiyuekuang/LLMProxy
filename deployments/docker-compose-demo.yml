@@ -1,0 +1,55 @@
+version: '3.8'
+
+services:
+  # Ollama 服务（轻量级 LLM 运行环境）
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+    environment:
+      - OLLAMA_HOST=0.0.0.0:11434
+    # 启动后自动拉取小模型（约 2GB）
+    entrypoint: >
+      sh -c "
+        /bin/ollama serve &
+        sleep 5 &&
+        ollama pull qwen2.5:0.5b &&
+        wait
+      "
+
+  # LLMProxy 服务
+  llmproxy:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./config-demo.yaml:/etc/llmproxy/config.yaml
+    environment:
+      - TZ=Asia/Shanghai
+    depends_on:
+      - ollama
+      - webhook-receiver
+    restart: unless-stopped
+
+  # Webhook 接收服务（用于测试用量上报）
+  webhook-receiver:
+    image: python:3.11-slim
+    working_dir: /app
+    volumes:
+      - ../examples/webhook-receiver.py:/app/webhook-receiver.py
+    command: >
+      sh -c "
+        pip install flask &&
+        python webhook-receiver.py
+      "
+    ports:
+      - "3005:3001"
+    environment:
+      - PYTHONUNBUFFERED=1
+
+volumes:
+  ollama-data:

@@ -18,6 +18,9 @@ go.work
 # Config files (keep example)
 config.yaml
 
+# GitHub Actions cache
+.github/workflows/*.log
+
 # IDE
 .vscode/
 .idea/

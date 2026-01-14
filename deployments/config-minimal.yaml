@@ -1,0 +1,23 @@
+# 最小化配置 - 仅用于测试 LLMProxy
+# 请修改后端 URL 为你实际的服务地址
+
+listen: ":8080"
+
+backends:
+  # 请修改为你的后端地址
+  # 示例：
+  # - OpenAI API: https://api.openai.com
+  # - 本地 vLLM: http://host.docker.internal:8000
+  # - 其他服务: http://your-service:port
+  - url: "http://host.docker.internal:8000"
+    weight: 5
+
+usage_hook:
+  enabled: true
+  url: "http://webhook-receiver:3001/llm-usage"
+  timeout: 1s
+  retry: 2
+
+health_check:
+  interval: 10s
+  path: /health

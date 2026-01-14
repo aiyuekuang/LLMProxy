@@ -1,0 +1,63 @@
+version: '3.8'
+
+services:
+  # LLMProxy 服务（不依赖 vLLM）
+  llmproxy:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./config-simple.yaml:/etc/llmproxy/config.yaml
+    environment:
+      - TZ=Asia/Shanghai
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  # Webhook 接收服务（用于测试）
+  webhook-receiver:
+    image: python:3.11-slim
+    ports:
+      - "3001:3001"
+    volumes:
+      - ../examples/webhook-receiver.py:/app/webhook-receiver.py
+    working_dir: /app
+    command: >
+      sh -c "pip install flask && python webhook-receiver.py"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # Prometheus（可选，用于监控）
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+    depends_on:
+      - llmproxy
+
+  # Grafana（可选，用于可视化）
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - grafana-storage:/var/lib/grafana
+    depends_on:
+      - prometheus
+
+volumes:
+  grafana-storage:

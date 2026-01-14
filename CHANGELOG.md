@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-01-14
+
 ### Added
 - GitHub Actions 自动化 Docker 镜像构建和发布
 - 多架构支持（linux/amd64, linux/arm64）
@@ -32,5 +34,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Prometheus 监控指标
 - Docker 和 Docker Compose 支持
 
-[Unreleased]: https://github.com/aiyuekuang/LLMProxy/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/aiyuekuang/LLMProxy/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/aiyuekuang/LLMProxy/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/aiyuekuang/LLMProxy/releases/tag/v0.1.0

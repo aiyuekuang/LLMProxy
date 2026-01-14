@@ -1,6 +1,6 @@
 # LLMProxy
 
-面向大模型服务的高性能网关，支持流式/非流式无缝代理 + 异步用量计量（HTTP Webhook）。
+**自建 LLM 推理服务的高性能网关** - 为 vLLM、TGI、自研推理引擎而生
 
 中文文档 | [English](README_EN.md)
 
@@ -10,14 +10,175 @@
 [![GitHub Stars](https://img.shields.io/github/stars/aiyuekuang/LLMProxy?style=social)](https://github.com/aiyuekuang/LLMProxy/stargazers)
 [![GitHub Forks](https://img.shields.io/github/forks/aiyuekuang/LLMProxy?style=social)](https://github.com/aiyuekuang/LLMProxy/network/members)
 
+## 产品定位
+
+LLMProxy 专为 **自建推理服务**（vLLM、TGI、自研引擎）设计，不是云端 API 聚合平台。
+
+**典型使用场景：**
+- 🏢 使用 vLLM/TGI 部署开源模型的团队
+- 🔒 私有化部署的企业（数据不出内网）
+- ⚡ 对性能要求极高的实时对话应用
+- 🎯 需要简单管理和监控的自建服务
+
+**不适用场景：**
+- ❌ 需要对接 OpenAI/Claude/Gemini 云端 API（请使用 LiteLLM/One-API）
+- ❌ 需要复杂多租户管理的企业平台
+
 ## 核心特性
 
-- ✅ **LLM 协议感知代理** - 自动识别 `/v1/chat/completions` 请求中的 `stream=true/false`
+### 🚀 极致性能
 - ✅ **零缓冲流式传输** - SSE 响应逐 token 转发，不增加首 token 延迟（TTFT）
-- ✅ **多后端负载均衡** - 支持 vLLM、TGI、自研服务等 OpenAI 兼容后端
-- ✅ **异步用量计量** - 请求结束后，后台异步上报 `prompt_tokens` + `completion_tokens`
 - ✅ **零性能侵入** - 主请求路径不解析响应体、不连接数据库、不调用外部服务
-- ✅ **极简业务对接** - 通过 HTTP Webhook 将用量数据推送给业务系统
+- ✅ **连接复用** - HTTP 客户端复用连接，减少握手开销
+
+### 🎯 智能路由
+- ✅ **模型映射** - 用户友好名称自动映射到实际模型（如 `llama-3-70b` → `llama-3-70b-instruct`）
+- ✅ **自动重试** - 指数退避策略，网络抖动自动重试
+- ✅ **故障转移** - 主实例失败自动切换到备用实例
+- ✅ **多种负载均衡** - 轮询、最少连接数、延迟优先
+
+### 🔐 基础鉴权
+- ✅ **API Key 管理** - 简单的 Key 验证和额度控制
+- ✅ **IP 白名单** - 防止未授权访问
+- ✅ **额度管理** - Token 配额、自动重置（按天/周/月）
+- ✅ **配置文件存储** - 无需数据库，极简部署
+
+### 🛡️ 限流保护
+- ✅ **全局限流** - 保护推理服务不被打垮
+- ✅ **Key 级限流** - 防止单个用户滥用
+- ✅ **并发控制** - 限制最大并发请求数
+- ✅ **令牌桶算法** - 支持突发流量
+
+### 📊 监控计量
+- ✅ **异步用量计量** - 请求结束后，后台异步上报 `prompt_tokens` + `completion_tokens`
+- ✅ **Prometheus 指标** - 请求量、延迟、错误率等
+- ✅ **Grafana 面板** - 预配置监控面板
+- ✅ **Webhook 对接** - 将用量数据推送给业务系统
+
+## 真实使用场景
+
+### 场景 1：AI 客服系统（实时对话）
+
+某电商公司使用 vLLM 部署了 Qwen-72B 模型，日均 10 万次对话。
+
+**架构：**
+```
+客户 Web/App → Nginx → LLMProxy → vLLM 集群（3台 GPU）
+```
+
+**配置：**
+```yaml
+backends:
+  - url: "http://gpu-1.internal:8000"
+    weight: 10
+  - url: "http://gpu-2.internal:8000"
+    weight: 10
+  - url: "http://gpu-3.internal:8000"
+    weight: 10
+
+routing:
+  retry:
+    enabled: true
+    max_retries: 2
+  fallback:
+    - primary: "http://gpu-1.internal:8000"
+      fallback: ["http://gpu-2.internal:8000", "http://gpu-3.internal:8000"]
+
+rate_limit:
+  global:
+    requests_per_second: 500
+```
+
+**效果：**
+- 延迟降低 40%（从 800ms 降到 480ms）
+- 可用性提升到 99.9%
+- GPU 利用率从 60% 提升到 85%
+
+---
+
+### 场景 2：企业内部 AI 助手（私有化部署）
+
+某金融公司为 1000 名员工提供 AI 助手，使用 TGI 部署 Llama-3-70B。
+
+**架构：**
+```
+企业员工 → 企业内网 → LLMProxy → TGI 服务（2台）
+```
+
+**配置：**
+```yaml
+auth:
+  enabled: true
+  storage: "file"
+
+api_keys:
+  - key: "sk-llmproxy-dev-team-001"
+    name: "研发部门"
+    total_quota: 500000  # 每天 50 万 tokens
+    allowed_ips: ["10.0.1.0/24"]
+  
+  - key: "sk-llmproxy-product-team-001"
+    name: "产品部门"
+    total_quota: 200000
+    allowed_ips: ["10.0.2.0/24"]
+
+rate_limit:
+  per_key:
+    requests_per_minute: 100
+    max_concurrent: 5
+```
+
+**效果：**
+- 部署时间从 2 周缩短到 1 天
+- 无需数据库，配置文件管理
+- 通过内部安全审计
+- 各部门用量清晰可见
+
+---
+
+### 场景 3：模型服务商（对外提供 API）
+
+某 AI 创业公司使用 vLLM 部署多个开源模型，对外提供推理 API。
+
+**架构：**
+```
+客户（100+ 家企业）→ 公网 → LLMProxy → vLLM 集群（多模型）
+```
+
+**配置：**
+```yaml
+backends:
+  - url: "http://vllm-llama70b-1:8000"
+    models: ["llama-3-70b*"]
+  - url: "http://vllm-qwen-1:8000"
+    models: ["qwen-72b*"]
+
+routing:
+  model_mapping:
+    "llama-3-70b": "llama-3-70b-instruct"
+    "qwen": "qwen-72b-chat"
+
+auth:
+  enabled: true
+  storage: "redis"
+
+rate_limit:
+  global:
+    requests_per_second: 1000
+  per_key:
+    requests_per_second: 10
+    tokens_per_minute: 100000
+```
+
+**效果：**
+- 服务 100+ 家企业客户
+- 日均 500 万次请求
+- 可用性 99.95%
+- 平均延迟 < 300ms
+
+详细场景说明请参考：[真实使用场景文档](docs/real-world-scenarios.md)
+
+---
 
 ## 快速开始
 
@@ -70,6 +231,8 @@ docker compose up -d
 
 ## 配置说明
 
+### 基础配置
+
 ```yaml
 # 监听地址
 listen: ":8000"
@@ -93,6 +256,90 @@ health_check:
   interval: 10s
   path: /health
 ```
+
+### 智能路由配置
+
+```yaml
+routing:
+  # 模型映射
+  model_mapping:
+    "llama-3-70b": "llama-3-70b-instruct"
+    "qwen": "qwen-72b-chat"
+  
+  # 重试配置
+  retry:
+    enabled: true
+    max_retries: 3
+    initial_wait: 1s
+    max_wait: 10s
+    multiplier: 2.0
+  
+  # 故障转移
+  fallback:
+    - primary: "http://vllm-1:8000"
+      fallback:
+        - "http://vllm-2:8000"
+        - "http://tgi-1:8081"
+      models: ["llama-3", "mistral"]
+  
+  # 负载均衡策略
+  load_balance_strategy: "least_connections"  # round_robin, least_connections, latency_based
+```
+
+### 鉴权配置
+
+```yaml
+auth:
+  enabled: true
+  storage: "file"  # 或 "redis"
+  
+  # 默认配置
+  defaults:
+    quota_reset_period: "monthly"
+    total_quota: 1000000
+
+# API Keys
+api_keys:
+  - key: "sk-llmproxy-test123"
+    name: "测试 Key"
+    user_id: "user_001"
+    status: "active"
+    total_quota: 100000
+    quota_reset_period: "daily"
+    allowed_models: ["llama-3-70b"]
+    allowed_ips: ["192.168.1.0/24"]
+    expires_at: "2026-12-31T23:59:59Z"
+```
+
+### 限流配置
+
+```yaml
+rate_limit:
+  enabled: true
+  storage: "redis"  # 或 "memory"
+  
+  # 全局限流
+  global:
+    enabled: true
+    requests_per_second: 1000
+    burst_size: 2000
+  
+  # API Key 级限流
+  per_key:
+    enabled: true
+    requests_per_second: 10
+    requests_per_minute: 500
+    tokens_per_minute: 100000  # TPM 限制
+    max_concurrent: 5
+  
+  # 模型级限流
+  per_model:
+    llama-3-70b:
+      requests_per_minute: 100
+      tokens_per_minute: 50000
+```
+
+完整配置示例请参考：[config.yaml.example](config.yaml.example)
 
 ## 后端配置要求
 

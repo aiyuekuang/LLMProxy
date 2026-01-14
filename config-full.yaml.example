@@ -1,0 +1,136 @@
+# LLMProxy 完整配置示例
+# 包含所有新功能：智能路由、鉴权、限流
+
+# 监听地址
+listen: ":8000"
+
+# 后端服务器列表
+backends:
+  # Llama-3-70B 集群
+  - url: "http://vllm-llama70b-1:8000"
+    weight: 10
+    models: ["llama-3-70b*"]  # 支持通配符
+  - url: "http://vllm-llama70b-2:8000"
+    weight: 10
+    models: ["llama-3-70b*"]
+  
+  # Qwen-72B 集群
+  - url: "http://vllm-qwen-1:8000"
+    weight: 10
+    models: ["qwen-72b*"]
+  - url: "http://vllm-qwen-2:8000"
+    weight: 10
+    models: ["qwen-72b*"]
+
+# 智能路由配置
+routing:
+  # 模型映射（用户友好名称 -> 实际模型名）
+  model_mapping:
+    "llama-3-70b": "llama-3-70b-instruct"
+    "qwen": "qwen-72b-chat"
+  
+  # 自动重试配置
+  retry:
+    enabled: true
+    max_retries: 3              # 最大重试次数
+    initial_wait: 1s            # 初始等待时间
+    max_wait: 10s               # 最大等待时间
+    multiplier: 2.0             # 指数退避倍数
+  
+  # 故障转移配置
+  fallback:
+    - primary: "http://vllm-llama70b-1:8000"
+      fallback:
+        - "http://vllm-llama70b-2:8000"
+      models: ["llama-3-70b*"]
+    
+    - primary: "http://vllm-qwen-1:8000"
+      fallback:
+        - "http://vllm-qwen-2:8000"
+      models: ["qwen-72b*"]
+  
+  # 负载均衡策略
+  # 可选值: round_robin, least_connections, latency_based
+  load_balance_strategy: "least_connections"
+
+# 鉴权配置
+auth:
+  enabled: true
+  storage: "file"  # 存储方式: file 或 redis
+  
+  # 默认配置
+  defaults:
+    quota_reset_period: "monthly"
+    total_quota: 1000000
+
+# API Keys（仅当 auth.storage=file 时使用）
+api_keys:
+  # 研发部门
+  - key: "sk-llmproxy-dev-team-001"
+    name: "研发部门"
+    user_id: "dept_dev"
+    status: "active"
+    total_quota: 500000          # 每月 50 万 tokens
+    quota_reset_period: "monthly"
+    allowed_models: ["llama-3-70b", "qwen"]
+    allowed_ips: ["192.168.1.0/24"]
+    expires_at: "2026-12-31T23:59:59Z"
+  
+  # 产品部门
+  - key: "sk-llmproxy-product-team-001"
+    name: "产品部门"
+    user_id: "dept_product"
+    status: "active"
+    total_quota: 200000
+    quota_reset_period: "monthly"
+    allowed_models: ["llama-3-70b"]
+    allowed_ips: ["192.168.2.0/24"]
+  
+  # 测试 Key
+  - key: "sk-llmproxy-test-001"
+    name: "测试环境"
+    user_id: "test"
+    status: "active"
+    total_quota: 100000
+    quota_reset_period: "daily"
+
+# 限流配置
+rate_limit:
+  enabled: true
+  storage: "memory"  # 存储方式: memory 或 redis
+  
+  # 全局限流
+  global:
+    enabled: true
+    requests_per_second: 1000
+    burst_size: 2000
+  
+  # API Key 级限流
+  per_key:
+    enabled: true
+    requests_per_second: 10
+    requests_per_minute: 500
+    tokens_per_minute: 100000    # TPM 限制
+    max_concurrent: 5            # 最大并发数
+    burst_size: 20
+  
+  # 模型级限流
+  per_model:
+    llama-3-70b:
+      requests_per_minute: 100
+      tokens_per_minute: 50000
+    qwen:
+      requests_per_minute: 200
+      tokens_per_minute: 100000
+
+# 用量上报 Webhook 配置
+usage_hook:
+  enabled: true
+  url: "http://billing-api:8080/api/v1/usage"
+  timeout: 2s
+  retry: 3
+
+# 健康检查配置
+health_check:
+  interval: 10s
+  path: /health

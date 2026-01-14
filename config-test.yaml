@@ -1,0 +1,62 @@
+# 测试配置文件
+listen: ":8000"
+
+# 后端服务器（使用 httpbin.org 作为测试后端）
+backends:
+  - url: "https://httpbin.org"
+    weight: 10
+
+# 智能路由配置
+routing:
+  # 模型映射
+  model_mapping:
+    "test-model": "test-model-v1"
+  
+  # 自动重试
+  retry:
+    enabled: true
+    max_retries: 2
+    initial_wait: 500ms
+    max_wait: 5s
+    multiplier: 2.0
+  
+  # 负载均衡策略
+  load_balance_strategy: "round_robin"
+
+# 鉴权配置
+auth:
+  enabled: true
+  storage: "file"
+
+# API Keys
+api_keys:
+  - key: "sk-llmproxy-test-123"
+    name: "测试 Key"
+    user_id: "test_user"
+    status: "active"
+    total_quota: 1000000
+    quota_reset_period: "daily"
+    allowed_models: ["test-model"]
+
+# 限流配置
+rate_limit:
+  enabled: true
+  storage: "memory"
+  
+  # 全局限流
+  global:
+    enabled: true
+    requests_per_second: 100
+    burst_size: 200
+  
+  # Key 级限流
+  per_key:
+    enabled: true
+    requests_per_second: 10
+    burst_size: 20
+    max_concurrent: 5
+
+# 健康检查
+health_check:
+  interval: 30s
+  path: /status

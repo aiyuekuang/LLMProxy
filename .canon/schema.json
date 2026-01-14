@@ -33,9 +33,46 @@
     "lb": {
       "name": "负载均衡器",
       "path": "internal/lb/",
-      "documentation": "负载均衡模块，支持多种策略。当前实现轮询（Round Robin）算法。功能：1. 维护后端列表 2. 根据权重选择后端 3. 健康检查（定期探测后端 /health 接口）4. 自动摘除不健康节点 5. 线程安全（使用 sync.Mutex）",
+      "documentation": "负载均衡模块，支持多种策略。功能：1. 维护后端列表 2. 根据权重选择后端 3. 健康检查（定期探测后端 /health 接口）4. 自动摘除不健康节点 5. 线程安全（使用 sync.Mutex）6. 支持多种负载均衡策略（轮询、最少连接数、延迟优先）",
       "files": {
-        "roundrobin.go": "实现轮询负载均衡器。包含 Backend 结构体（URL、Weight、Healthy）、LoadBalancer 接口、RoundRobin 结构体和 Next 方法"
+        "balancer.go": "定义 LoadBalancer 接口和 Backend 结构体。接口方法：Next（选择后端）、UpdateHealth（更新健康状态）、RecordResult（记录请求结果）",
+        "roundrobin.go": "实现轮询负载均衡器。包含 RoundRobin 结构体和 Next 方法。根据权重轮询选择后端",
+        "least_connections.go": "实现最少连接数负载均衡器。维护每个后端的当前并发数，选择并发数最少的后端。适合长连接场景",
+        "latency_based.go": "实现延迟优先负载均衡器。维护每个后端的平均延迟（使用指数移动平均 EMA），选择延迟最低的后端。适合性能敏感场景"
+      }
+    },
+    "routing": {
+      "name": "智能路由模块",
+      "path": "internal/routing/",
+      "documentation": "智能路由模块，负责模型映射、重试、故障转移。功能：1. 模型名映射（用户友好名称 -> 实际模型）2. 自动重试（指数退避）3. 故障转移（主后端失败切换到备用）4. 与负载均衡器集成 5. 与健康检查集成",
+      "files": {
+        "router.go": "路由器主逻辑。包含 Router 结构体、ProxyWithRetry（重试逻辑）、ProxyWithFallback（故障转移逻辑）、MapModel（模型映射）方法",
+        "config.go": "路由配置结构体。包含 RoutingConfig、RetryConfig、FallbackRule 等结构体定义",
+        "retry.go": "重试逻辑实现。指数退避算法，可配置重试次数、初始等待时间、最大等待时间、退避倍数。判断是否应该重试（网络错误、超时、5xx 错误重试，4xx 不重试）"
+      }
+    },
+    "auth": {
+      "name": "鉴权模块",
+      "path": "internal/auth/",
+      "documentation": "API Key 鉴权模块。功能：1. Key 验证（格式、状态、过期时间）2. IP 白名单/黑名单检查 3. 额度管理（Token 配额、重置周期）4. 模型访问权限控制 5. 支持多种存储方式（配置文件、Redis）",
+      "files": {
+        "middleware.go": "鉴权中间件。拦截请求，验证 API Key，检查权限和额度。验证失败返回 401/403，额度不足返回 429",
+        "keystore.go": "Key 存储接口和实现。定义 KeyStore 接口（Get、Update、IncrementUsedQuota 等方法）。实现 FileKeyStore（配置文件存储）和 RedisKeyStore（Redis 存储）",
+        "models.go": "数据结构定义。包含 APIKey 结构体（Key、Name、UserID、Status、TotalQuota、UsedQuota、AllowedModels、AllowedIPs 等字段）",
+        "quota.go": "额度管理逻辑。包含 DeductQuota（扣减额度）、ResetQuotaIfNeeded（按周期重置额度）、CheckQuota（检查额度是否充足）方法",
+        "ip.go": "IP 控制逻辑。包含 CheckIPAllowed（检查 IP 是否允许访问）、ParseCIDR（解析 CIDR）方法"
+      }
+    },
+    "ratelimit": {
+      "name": "限流模块",
+      "path": "internal/ratelimit/",
+      "documentation": "限流模块，支持多层级限流。功能：1. 全局限流（保护推理服务）2. API Key 级限流（防止滥用）3. 并发数限制 4. Token 速率限制（TPM）5. 使用令牌桶算法 6. 支持 Redis 分布式限流",
+      "files": {
+        "middleware.go": "限流中间件。包含 RateLimitMiddleware（请求级限流）、TokenRateLimitMiddleware（Token 级限流）。设置标准 HTTP 响应头（X-RateLimit-Limit、X-RateLimit-Remaining 等）",
+        "limiter.go": "限流器接口和实现。定义 RateLimiter 接口（Allow、AllowN、Remaining 等方法）。实现 RedisRateLimiter（基于 Redis）和 MemoryRateLimiter（基于内存）",
+        "token_bucket.go": "令牌桶算法实现。使用 Redis Lua 脚本实现原子操作。支持突发流量（burst_size）",
+        "config.go": "限流配置结构体。包含 RateLimitConfig、GlobalRateLimit、KeyRateLimit 等结构体定义",
+        "concurrent.go": "并发数限制实现。使用 Redis 计数器跟踪当前并发数。请求开始时增加计数，结束时减少计数"
       }
     },
     "metrics": {
@@ -91,24 +128,47 @@
     "load_balancing": {
       "enabled": true,
       "strategy": "round_robin",
-      "documentation": "负载均衡策略为轮询（Round Robin），支持权重配置。健康检查每 10 秒探测一次后端 /health 接口，不健康节点自动摘除"
+      "documentation": "负载均衡策略为轮询（Round Robin），支持权重配置。健康检查每 10 秒探测一次后端 /health 接口，不健康节点自动摘除。Phase 2 将扩展支持：最少连接数（least_connections）、延迟优先（latency_based）策略"
     },
     "usage_metering": {
       "enabled": true,
       "async": true,
       "documentation": "异步用量计量。请求结束后启动 goroutine 收集用量数据（从响应的 usage 字段提取），通过 HTTP Webhook 上报。上报失败仅记录日志，不影响主流程。支持的后端：vLLM（需启用 --return-detailed-tokens）、TGI（默认支持）"
     },
+    "intelligent_routing": {
+      "enabled": true,
+      "documentation": "智能路由与故障转移。功能包括：1. 模型映射（用户友好名称 -> 实际模型名）2. 自动重试（指数退避策略，可配置重试次数和超时）3. 故障转移（主后端失败自动切换到备用后端，支持多级 fallback）4. 健康检查集成（自动摘除不健康节点）。配置示例见 docs/design-intelligent-routing.md",
+      "components": {
+        "model_mapping": "将用户请求的模型名映射到实际后端模型，支持模型别名。例如：llama-3-70b -> llama-3-70b-instruct",
+        "retry": "请求失败后自动重试，使用指数退避策略（initial_wait * multiplier^attempt）。可配置最大重试次数、初始等待时间、最大等待时间、退避倍数",
+        "fallback": "主后端失败后自动切换到备用后端。支持多级 fallback，可按模型配置不同的 fallback 规则。与健康检查集成，自动跳过不健康节点",
+        "load_balance_strategies": "扩展负载均衡策略：1. round_robin（轮询，已实现）2. least_connections（最少连接数）3. latency_based（延迟优先）"
+      }
+    },
     "authentication": {
-      "enabled": false,
-      "documentation": "API Key 鉴权功能未启用，由上游网关处理"
+      "enabled": true,
+      "documentation": "基础 API Key 鉴权。功能包括：1. API Key 验证（格式：sk-llmproxy-{32位随机字符}）2. IP 白名单/黑名单（CIDR 格式）3. 简单额度控制（Token 配额、重置周期）4. 模型访问权限控制 5. 过期时间检查。存储方式：配置文件（file）或 Redis。配置示例见 docs/design-api-key-management.md",
+      "components": {
+        "key_validation": "验证 API Key 是否存在、是否启用、是否过期。Key 格式：sk-llmproxy-{32位随机字符}",
+        "ip_control": "IP 白名单/黑名单控制，支持 CIDR 格式。优先检查黑名单，再检查白名单",
+        "quota_management": "Token 额度管理。支持总额度设置、已用额度追踪、额度重置（daily/weekly/monthly/never）。额度不足时拒绝请求",
+        "permission_control": "模型访问权限控制。可限制每个 Key 只能访问特定模型。空列表表示允许所有模型",
+        "storage": "支持两种存储方式：1. file（配置文件，适合小规模）2. redis（高性能，适合大规模）"
+      }
     },
     "rate_limiting": {
-      "enabled": false,
-      "documentation": "限流功能未启用，初期不需要"
+      "enabled": true,
+      "documentation": "基础限流控制。功能包括：1. 全局 QPS 限制（保护推理服务）2. API Key 级 QPS 限制（防止单个 Key 滥用）3. 并发数限制（防止资源耗尽）4. Token 速率限制（TPM）。算法：令牌桶（支持突发流量）。存储：Redis（分布式）或内存（单机）。配置示例见 docs/design-rate-limiting.md",
+      "components": {
+        "global_limit": "全局 QPS/QPM 限制，保护后端推理服务不被打垮。支持突发流量（burst_size）",
+        "key_limit": "API Key 级限流。支持：1. requests_per_second（QPS）2. requests_per_minute（QPM）3. tokens_per_minute（TPM）4. max_concurrent（最大并发数）",
+        "algorithm": "令牌桶算法。支持突发流量，平滑限流。使用 Redis Lua 脚本实现原子操作",
+        "response_headers": "标准 HTTP 限流响应头：X-RateLimit-Limit、X-RateLimit-Remaining、X-RateLimit-Reset、Retry-After"
+      }
     },
     "multi_tenancy": {
       "enabled": false,
-      "documentation": "多租户功能未启用"
+      "documentation": "多租户功能未启用。当前通过 API Key 实现简单的多用户隔离"
     }
   },
   "logging": {

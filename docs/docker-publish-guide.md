@@ -23,7 +23,7 @@ git push origin v1.0.0
 
 推送 tag 后，GitHub Actions 会自动：
 - ✅ 构建 `linux/amd64` 和 `linux/arm64` 双架构镜像
-- ✅ 推送到 `ghcr.io/<你的用户名>/llmproxy`
+- ✅ 推送到 `ghcr.io/aiyuekuang/llmproxy`
 - ✅ 生成以下标签：
   - `v1.0.0` - 完整版本号
   - `v1.0` - 次版本号
@@ -34,7 +34,7 @@ git push origin v1.0.0
 
 访问 GitHub 仓库的 Packages 页面：
 ```
-https://github.com/<你的用户名>/llmproxy/pkgs/container/llmproxy
+https://github.com/aiyuekuang/llmproxy/pkgs/container/llmproxy
 ```
 
 ## 🔧 配置说明
@@ -50,7 +50,7 @@ https://github.com/<你的用户名>/llmproxy/pkgs/container/llmproxy
 
 首次发布后，需要设置镜像为公开：
 
-1. 访问 `https://github.com/<你的用户名>?tab=packages`
+1. 访问 `https://github.com/aiyuekuang?tab=packages`
 2. 点击 `llmproxy` 包
 3. 点击右侧 `Package settings`
 4. 滚动到底部 `Danger Zone`
@@ -79,13 +79,13 @@ https://github.com/<你的用户名>/llmproxy/pkgs/container/llmproxy
 
 ```bash
 # 生产环境：锁定完整版本
-docker pull ghcr.io/<你的用户名>/llmproxy:v1.0.0
+docker pull ghcr.io/aiyuekuang/llmproxy:v1.0.0
 
 # 开发环境：使用次版本（自动获取补丁更新）
-docker pull ghcr.io/<你的用户名>/llmproxy:v1.0
+docker pull ghcr.io/aiyuekuang/llmproxy:v1.0
 
 # 测试最新功能
-docker pull ghcr.io/<你的用户名>/llmproxy:latest
+docker pull ghcr.io/aiyuekuang/llmproxy:latest
 ```
 
 ## 🔒 安全最佳实践
@@ -168,13 +168,13 @@ docker pull ghcr.io/<你的用户名>/llmproxy:latest
 在 README.md 中添加：
 
 ```markdown
-[![Docker Build](https://github.com/<你的用户名>/llmproxy/actions/workflows/release.yml/badge.svg)](https://github.com/<你的用户名>/llmproxy/actions/workflows/release.yml)
+[![Docker Build](https://github.com/aiyuekuang/LLMProxy/actions/workflows/release.yml/badge.svg)](https://github.com/aiyuekuang/LLMProxy/actions/workflows/release.yml)
 ```
 
 ### 镜像大小徽章
 
 ```markdown
-![Docker Image Size](https://ghcr-badge.egpl.dev/<你的用户名>/llmproxy/size?tag=latest)
+![Docker Image Size](https://ghcr-badge.egpl.dev/aiyuekuang/llmproxy/size?tag=latest)
 ```
 
 ## 🐛 常见问题

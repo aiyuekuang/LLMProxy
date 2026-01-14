@@ -57,7 +57,7 @@ spec:
     spec:
       containers:
       - name: llmproxy
-        image: ghcr.io/<你的用户名>/llmproxy:v1.0.0
+        image: ghcr.io/aiyuekuang/llmproxy:v1.0.0
         ports:
         - containerPort: 8080
           name: http
@@ -297,7 +297,7 @@ cd llmproxy-chart
 replicaCount: 3
 
 image:
-  repository: ghcr.io/<你的用户名>/llmproxy
+  repository: ghcr.io/aiyuekuang/llmproxy
   pullPolicy: IfNotPresent
   tag: "v1.0.0"
 
@@ -442,7 +442,7 @@ curl http://localhost:8080/health
 ```bash
 # 更新镜像版本
 kubectl set image deployment/llmproxy \
-  llmproxy=ghcr.io/<你的用户名>/llmproxy:v1.1.0 \
+  llmproxy=ghcr.io/aiyuekuang/llmproxy:v1.1.0 \
   -n default
 
 # 查看更新状态

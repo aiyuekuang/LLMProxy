@@ -71,17 +71,17 @@ git push origin v1.0.0
 
 ```bash
 # 拉取新镜像
-docker pull ghcr.io/<你的用户名>/llmproxy:v1.0.0
+docker pull ghcr.io/aiyuekuang/llmproxy:v1.0.0
 
 # 测试运行
-docker run --rm ghcr.io/<你的用户名>/llmproxy:v1.0.0 --help
+docker run --rm ghcr.io/aiyuekuang/llmproxy:v1.0.0 --help
 
 # 完整功能测试
 docker run -d \
   --name llmproxy-test \
   -p 8080:8080 \
   -v $(pwd)/config.yaml:/home/llmproxy/config.yaml \
-  ghcr.io/<你的用户名>/llmproxy:v1.0.0
+  ghcr.io/aiyuekuang/llmproxy:v1.0.0
 
 # 健康检查
 curl http://localhost:8080/health
@@ -93,7 +93,7 @@ docker rm llmproxy-test
 
 ### 6. 创建 GitHub Release
 
-- [ ] 访问 `https://github.com/<你的用户名>/llmproxy/releases/new`
+- [ ] 访问 `https://github.com/aiyuekuang/LLMProxy/releases/new`
 - [ ] 选择刚创建的 tag
 - [ ] 填写 Release 标题：`v1.0.0`
 - [ ] 复制 CHANGELOG 内容到描述
@@ -103,14 +103,14 @@ docker rm llmproxy-test
 ## 🐳 Docker 使用
 
 \`\`\`bash
-docker pull ghcr.io/<你的用户名>/llmproxy:v1.0.0
+docker pull ghcr.io/aiyuekuang/llmproxy:v1.0.0
 \`\`\`
 
 支持架构：`linux/amd64`, `linux/arm64`
 
 ## 📦 完整更新日志
 
-[查看完整 CHANGELOG](https://github.com/<你的用户名>/llmproxy/blob/main/CHANGELOG.md)
+[查看完整 CHANGELOG](https://github.com/aiyuekuang/LLMProxy/blob/main/CHANGELOG.md)
 ```
 
 - [ ] 点击 `Publish release`

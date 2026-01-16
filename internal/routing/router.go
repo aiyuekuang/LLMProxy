@@ -46,28 +46,11 @@ func NewRouter(config *RoutingConfig, loadBalancer lb.LoadBalancer, backends []*
 	}
 }
 
-// MapModel 模型名映射
-// 参数：
-//   - requestedModel: 用户请求的模型名
-// 返回：
-//   - string: 实际模型名
-func (r *Router) MapModel(requestedModel string) string {
-	if r.config == nil || r.config.ModelMapping == nil {
-		return requestedModel
-	}
-
-	if mapped, ok := r.config.ModelMapping[requestedModel]; ok {
-		log.Printf("模型映射: %s -> %s", requestedModel, mapped)
-		return mapped
-	}
-	return requestedModel
-}
-
 // ProxyRequest 代理请求（带重试和故障转移）
 // 参数：
 //   - r: HTTP 请求
 //   - bodyBytes: 请求体
-//   - model: 模型名
+//   - model: 模型名（已废弃，保留参数以兼容）
 // 返回：
 //   - *http.Response: 响应
 //   - *lb.Backend: 使用的后端
@@ -128,7 +111,7 @@ func (r *Router) proxyWithRetry(req *http.Request, bodyBytes []byte, model strin
 	err := retryRequest(&r.config.Retry, func() (int, error) {
 		// 选择后端
 		if backend == nil {
-			selectedBackend = r.loadBalancer.Next(model)
+			selectedBackend = r.loadBalancer.Next("")
 			if selectedBackend == nil {
 				return 503, fmt.Errorf("没有可用的健康后端")
 			}

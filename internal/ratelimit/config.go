@@ -8,4 +8,3 @@ import (
 type RateLimitConfig = config.RateLimitConfig
 type GlobalLimit = config.GlobalLimit
 type KeyLimit = config.KeyLimit
-type ModelLimit = config.ModelLimit

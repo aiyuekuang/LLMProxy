@@ -62,30 +62,3 @@ func ResetQuotaIfNeeded(key *APIKey) bool {
 	return false
 }
 
-// CheckModelAllowed 检查模型是否允许访问
-// 参数：
-//   - key: API Key
-//   - model: 模型名
-// 返回：
-//   - bool: 是否允许
-func CheckModelAllowed(key *APIKey, model string) bool {
-	// 空列表表示允许所有模型
-	if len(key.AllowedModels) == 0 {
-		return true
-	}
-	
-	for _, m := range key.AllowedModels {
-		if m == model {
-			return true
-		}
-		// 支持通配符匹配
-		if len(m) > 0 && m[len(m)-1] == '*' {
-			prefix := m[:len(m)-1]
-			if len(model) >= len(prefix) && model[:len(prefix)] == prefix {
-				return true
-			}
-		}
-	}
-	
-	return false
-}

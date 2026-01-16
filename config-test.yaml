@@ -1,17 +1,13 @@
 # 测试配置文件
 listen: ":8000"
 
-# 后端服务器（使用 httpbin.org 作为测试后端）
+# 后端服务器（使用本地 Ollama）
 backends:
-  - url: "https://httpbin.org"
+  - url: "http://host.docker.internal:11434"
     weight: 10
 
 # 智能路由配置
 routing:
-  # 模型映射
-  model_mapping:
-    "test-model": "test-model-v1"
-  
   # 自动重试
   retry:
     enabled: true
@@ -36,7 +32,6 @@ api_keys:
     status: "active"
     total_quota: 1000000
     quota_reset_period: "daily"
-    allowed_models: ["test-model"]
 
 # 限流配置
 rate_limit:
@@ -58,5 +53,5 @@ rate_limit:
 
 # 健康检查
 health_check:
-  interval: 30s
-  path: /status
+  interval: 10s
+  path: /

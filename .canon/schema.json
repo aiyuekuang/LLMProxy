@@ -24,10 +24,10 @@
     "proxy": {
       "name": "核心代理引擎",
       "path": "internal/proxy/",
-      "documentation": "核心模块，负责请求代理和用量收集。关键实现：1. 仅处理 /v1/chat/completions 和 /v1/completions 路径 2. 读取请求体并解析 stream 参数 3. 通过负载均衡器选择后端 4. 使用 io.Copy 零缓冲转发响应（流式：text/event-stream，非流式：application/json）5. 请求结束后启动 goroutine 异步收集用量并上报",
+      "documentation": "核心模块，负责透明代理和用量收集。设计理念：完全透明的 HTTP 代理，不解析业务参数。关键实现：1. 仅处理 /v1/chat/completions 和 /v1/completions 路径 2. 完整读取请求体，不解析业务字段（如 model）3. 通过负载均衡器选择后端 4. 使用 io.Copy 零缓冲转发响应 5. 请求结束后启动 goroutine 异步收集用量并上报（包含完整请求参数）",
       "files": {
-        "handler.go": "实现 NewHandler 函数，返回 http.HandlerFunc。处理请求代理的主流程，包括：请求验证、body 读取、stream 参数解析、后端选择、请求转发、响应透传、异步用量上报触发",
-        "usage_hook.go": "实现用量收集和 Webhook 上报。包含：1. collectUsage 函数：从响应中提取 usage 字段（prompt_tokens、completion_tokens、total_tokens）2. SendUsageWebhook 函数：通过 HTTP POST 发送用量数据到配置的 Webhook URL，支持超时和重试"
+        "handler.go": "实现 NewHandler 函数，返回 http.HandlerFunc。处理请求代理的主流程，包括：请求验证、完整读取 body、后端选择、请求转发、响应透传、异步用量上报触发。不解析业务参数，保持透明",
+        "usage_hook.go": "实现用量收集和 Webhook 上报。包含：1. collectUsage 函数：从响应中提取 usage 字段（prompt_tokens、completion_tokens、total_tokens），同时保存完整的请求参数 2. SendUsageWebhook 函数：通过 HTTP POST 发送用量数据到配置的 Webhook URL，包含完整请求体，支持超时和重试"
       }
     },
     "lb": {
@@ -44,9 +44,9 @@
     "routing": {
       "name": "智能路由模块",
       "path": "internal/routing/",
-      "documentation": "智能路由模块，负责模型映射、重试、故障转移。功能：1. 模型名映射（用户友好名称 -> 实际模型）2. 自动重试（指数退避）3. 故障转移（主后端失败切换到备用）4. 与负载均衡器集成 5. 与健康检查集成",
+      "documentation": "智能路由模块，负责重试、故障转移。功能：1. 自动重试（指数退避）2. 故障转移（主后端失败切换到备用）3. 与负载均衡器集成 4. 与健康检查集成。注意：不再处理模型映射，保持透明代理原则",
       "files": {
-        "router.go": "路由器主逻辑。包含 Router 结构体、ProxyWithRetry（重试逻辑）、ProxyWithFallback（故障转移逻辑）、MapModel（模型映射）方法",
+        "router.go": "路由器主逻辑。包含 Router 结构体、ProxyWithRetry（重试逻辑）、ProxyWithFallback（故障转移逻辑）方法",
         "config.go": "路由配置结构体。包含 RoutingConfig、RetryConfig、FallbackRule 等结构体定义",
         "retry.go": "重试逻辑实现。指数退避算法，可配置重试次数、初始等待时间、最大等待时间、退避倍数。判断是否应该重试（网络错误、超时、5xx 错误重试，4xx 不重试）"
       }
@@ -54,11 +54,11 @@
     "auth": {
       "name": "鉴权模块",
       "path": "internal/auth/",
-      "documentation": "API Key 鉴权模块。功能：1. Key 验证（格式、状态、过期时间）2. IP 白名单/黑名单检查 3. 额度管理（Token 配额、重置周期）4. 模型访问权限控制 5. 支持多种存储方式（配置文件、Redis）",
+      "documentation": "API Key 鉴权模块。功能：1. Key 验证（格式、状态、过期时间）2. IP 白名单/黑名单检查 3. 额度管理（Token 配额、重置周期）4. 支持多种存储方式（配置文件、Redis）。注意：不再提供模型级权限控制，保持透明代理原则，权限控制由后端服务或 Webhook 接收方处理",
       "files": {
-        "middleware.go": "鉴权中间件。拦截请求，验证 API Key，检查权限和额度。验证失败返回 401/403，额度不足返回 429",
+        "middleware.go": "鉴权中间件。拦截请求，验证 API Key，检查额度。验证失败返回 401，额度不足返回 429。在请求头中添加用户信息（X-User-ID、X-API-Key）供后端使用",
         "keystore.go": "Key 存储接口和实现。定义 KeyStore 接口（Get、Update、IncrementUsedQuota 等方法）。实现 FileKeyStore（配置文件存储）和 RedisKeyStore（Redis 存储）",
-        "models.go": "数据结构定义。包含 APIKey 结构体（Key、Name、UserID、Status、TotalQuota、UsedQuota、AllowedModels、AllowedIPs 等字段）",
+        "models.go": "数据结构定义。包含 APIKey 结构体（Key、Name、UserID、Status、TotalQuota、UsedQuota、AllowedIPs 等字段）。注意：删除 AllowedModels 字段",
         "quota.go": "额度管理逻辑。包含 DeductQuota（扣减额度）、ResetQuotaIfNeeded（按周期重置额度）、CheckQuota（检查额度是否充足）方法",
         "ip.go": "IP 控制逻辑。包含 CheckIPAllowed（检查 IP 是否允许访问）、ParseCIDR（解析 CIDR）方法"
       }
@@ -66,9 +66,9 @@
     "ratelimit": {
       "name": "限流模块",
       "path": "internal/ratelimit/",
-      "documentation": "限流模块，支持多层级限流。功能：1. 全局限流（保护推理服务）2. API Key 级限流（防止滥用）3. 并发数限制 4. Token 速率限制（TPM）5. 使用令牌桶算法 6. 支持 Redis 分布式限流",
+      "documentation": "限流模块，支持多层级限流。功能：1. 全局限流（保护推理服务）2. API Key 级限流（防止滥用）3. 并发数限制 4. 使用令牌桶算法 5. 支持 Redis 分布式限流。注意：不再提供模型级限流，保持透明代理原则",
       "files": {
-        "middleware.go": "限流中间件。包含 RateLimitMiddleware（请求级限流）、TokenRateLimitMiddleware（Token 级限流）。设置标准 HTTP 响应头（X-RateLimit-Limit、X-RateLimit-Remaining 等）",
+        "middleware.go": "限流中间件。包含 RateLimitMiddleware（请求级限流）。设置标准 HTTP 响应头（X-RateLimit-Limit、X-RateLimit-Remaining 等）",
         "limiter.go": "限流器接口和实现。定义 RateLimiter 接口（Allow、AllowN、Remaining 等方法）。实现 RedisRateLimiter（基于 Redis）和 MemoryRateLimiter（基于内存）",
         "token_bucket.go": "令牌桶算法实现。使用 Redis Lua 脚本实现原子操作。支持突发流量（burst_size）",
         "config.go": "限流配置结构体。包含 RateLimitConfig、GlobalRateLimit、KeyRateLimit 等结构体定义",
@@ -81,6 +81,137 @@
       "documentation": "Prometheus 监控指标模块。提供的指标：1. llmproxy_requests_total（请求总数，标签：path、stream、backend、status）2. llmproxy_latency_ms（延迟直方图）3. llmproxy_webhook_success_total（Webhook 成功数）4. llmproxy_webhook_failure_total（Webhook 失败数）5. llmproxy_usage_tokens_total（token 使用量，标签：type=prompt/completion）",
       "files": {
         "metrics.go": "定义 Prometheus 指标并注册。提供 RecordRequest、RecordUsage、RecordWebhook 等函数，以及 Handler 函数用于暴露 /metrics 接口"
+      }
+    },
+    "scripting": {
+      "name": "Lua 脚本引擎",
+      "path": "internal/scripting/",
+      "status": "planned",
+      "priority": "high",
+      "documentation": "Lua 脚本引擎，提供可编程扩展能力。在网关内部执行 Lua 脚本，支持复杂逻辑、嵌套数据处理。相比 Webhook 方式，性能更好、无网络开销、支持热更新。使用 gopher-lua 库实现。详细设计见 docs/design-lua-scripting.md",
+      "supported_hooks": {
+        "routing": {
+          "priority": "high",
+          "documentation": "路由决策脚本。根据请求参数、用户信息、后端状态选择后端。支持嵌套数据、多条件组合、负载感知路由。输入：request、backends。输出：后端名称或 nil"
+        },
+        "auth": {
+          "priority": "high",
+          "documentation": "鉴权决策脚本。在标准鉴权检查后执行，支持自定义权限控制。输入：request、key_info、standard_checks。输出：{allow, reason, status_code}"
+        },
+        "request_transform": {
+          "priority": "medium",
+          "documentation": "请求转换脚本。在发送到后端前修改请求。支持参数映射、字段添加/删除。输入：request、backend_url。输出：{body, headers} 或 nil"
+        },
+        "response_transform": {
+          "priority": "medium",
+          "documentation": "响应转换脚本。在返回客户端前修改响应。支持格式转换、字段添加/删除。输入：request、response、backend_url、latency_ms。输出：{status_code, body, headers} 或 nil"
+        },
+        "rate_limit": {
+          "priority": "low",
+          "documentation": "限流决策脚本。在标准限流检查后执行，支持动态限流策略。输入：request、key_info、rate_limit_status、current_time。输出：{allow, reason, retry_after} 或 nil"
+        },
+        "usage": {
+          "priority": "low",
+          "documentation": "用量计算脚本。在用量上报前修改用量数据。支持自定义计费规则。输入：request、usage、response、metadata。输出：修改后的 usage 对象"
+        },
+        "error_handler": {
+          "priority": "low",
+          "documentation": "错误处理脚本。请求失败时执行，支持自定义错误响应。输入：request、error。输出：{status_code, body} 或 nil"
+        }
+      },
+      "files": {
+        "engine.go": "Lua 引擎封装。负责：1. 初始化 gopher-lua VM 2. 加载脚本文件 3. 管理 VM 池 4. 提供脚本执行接口 5. 超时和资源限制",
+        "context.go": "上下文构建。负责将 Go 数据结构转换为 Lua table，支持嵌套对象、数组。提供 mapToLuaTable、luaTableToMap 等工具函数",
+        "sandbox.go": "沙箱环境。负责：1. 禁用危险函数（os.execute、io.open 等）2. 限制资源使用（CPU、内存）3. 提供安全的内置函数库",
+        "stdlib.go": "标准库。提供常用工具函数：json 编解码、字符串处理、时间处理、哈希计算、日志记录",
+        "router.go": "路由脚本执行器。调用路由决策脚本，返回后端名称",
+        "auth.go": "鉴权脚本执行器。调用鉴权决策脚本，返回鉴权结果",
+        "transform.go": "转换脚本执行器。调用请求/响应转换脚本"
+      },
+      "dependencies": ["github.com/yuin/gopher-lua"]
+    },
+    "hooks": {
+      "name": "生命周期钩子系统（Webhook）",
+      "path": "internal/hooks/",
+      "status": "planned",
+      "priority": "low",
+      "documentation": "生命周期钩子系统（Webhook 方式）。作为 Lua 脚本的补充，用于需要查数据库、调用外部服务的场景。通过 HTTP POST 调用外部服务。详细设计见 docs/design-lifecycle-hooks.md。注意：优先使用 Lua 脚本，Webhook 仅用于复杂场景",
+      "hooks": {
+        "routing_decision": {
+          "priority": "high",
+          "position": "在负载均衡器选择后端之前",
+          "documentation": "路由决策钩子。用途：1. 基于请求内容的自定义路由 2. 基于用户的路由（VIP 用户路由到高性能后端）3. A/B 测试和灰度发布 4. 多租户路由。透传参数：request_id、api_key、user_id、request_body（完整请求参数）、available_backends（后端列表及状态）、client_ip、headers。返回值：backend_url（指定后端）或 use_default（使用默认负载均衡）"
+        },
+        "auth_decision": {
+          "priority": "high",
+          "position": "在鉴权中间件内部，标准检查之后",
+          "documentation": "鉴权决策钩子。用途：1. 自定义鉴权逻辑 2. 多因素认证 3. 动态权限控制 4. 与外部系统集成。透传参数：request_id、api_key、key_info（Key 详细信息）、client_ip、request_body、standard_checks（标准检查结果）。返回值：allow（是否允许）、reason（拒绝原因）、metadata（自定义元数据）"
+        },
+        "usage_report": {
+          "priority": "high",
+          "position": "请求完成后，异步执行",
+          "status": "implemented",
+          "documentation": "用量上报钩子（已实现）。用途：1. 用量计费 2. 数据分析 3. 审计日志 4. 业务统计。透传参数：request_id、user_id、api_key、request_body（完整请求参数）、usage（token 使用量）、is_stream、endpoint、timestamp、backend_url、latency_ms、status_code。建议优化：添加 response_body（可选）、error（错误信息）、retry_count（重试次数）、fallback_used（是否使用故障转移）"
+        },
+        "error_handler": {
+          "priority": "medium",
+          "position": "请求失败时",
+          "documentation": "错误处理钩子。用途：1. 自定义错误响应 2. 错误日志记录 3. 告警通知 4. 降级处理。透传参数：request_id、api_key、user_id、error_type（auth_error/rate_limit/backend_error/timeout）、error_message、backend_url、request_body、retry_count、timestamp。返回值：custom_response（自定义响应）、status_code、use_default（是否使用默认错误响应）"
+        },
+        "request_transform": {
+          "priority": "low",
+          "position": "在发送到后端之前",
+          "documentation": "请求转换钩子。用途：1. 请求参数转换 2. 添加/修改请求头 3. 模型名称映射 4. 参数标准化。透传参数：request_id、api_key、user_id、backend_url、original_body、original_headers。返回值：body（转换后的请求体）、headers（转换后的请求头）、skip_transform（是否跳过转换）"
+        },
+        "response_transform": {
+          "priority": "low",
+          "position": "在返回给客户端之前",
+          "documentation": "响应转换钩子。用途：1. 响应格式转换 2. 添加/修改响应头 3. 响应内容过滤 4. 错误信息标准化。透传参数：request_id、api_key、user_id、backend_url、status_code、original_body、original_headers、latency_ms。返回值：body（转换后的响应体）、headers（转换后的响应头）、status_code（可选修改）、skip_transform"
+        },
+        "pre_auth": {
+          "priority": "low",
+          "position": "在鉴权中间件之前",
+          "documentation": "鉴权前置钩子。用途：1. 自定义请求预处理 2. 请求日志记录 3. 自定义请求验证 4. 请求参数转换。透传参数：request_id、method、path、headers、body、client_ip、timestamp。返回值：allow（是否允许）、modified_body（可选修改）、modified_headers（可选修改）、error（拒绝原因）"
+        },
+        "health_check": {
+          "priority": "low",
+          "position": "定期执行",
+          "documentation": "健康检查钩子。用途：1. 自定义健康检查逻辑 2. 后端状态监控 3. 自动摘除/恢复节点。透传参数：backend_url、last_check_time、current_status、metrics（latency_ms、active_connections、error_rate）。返回值：healthy（是否健康）、reason（原因）、metadata（自定义指标）"
+        }
+      },
+      "configuration": {
+        "format": "YAML",
+        "example": {
+          "hooks": {
+            "routing_decision": {
+              "enabled": true,
+              "url": "http://routing-service:8080/decide",
+              "timeout": "100ms",
+              "retry": 1,
+              "on_failure": "use_default"
+            },
+            "auth_decision": {
+              "enabled": true,
+              "url": "http://auth-service:8080/check",
+              "timeout": "500ms",
+              "retry": 2,
+              "on_failure": "reject"
+            },
+            "usage_report": {
+              "enabled": true,
+              "url": "http://billing-service:8080/usage",
+              "timeout": "2s",
+              "retry": 3,
+              "async": true
+            }
+          }
+        }
+      },
+      "files": {
+        "manager.go": "钩子管理器。负责：1. 加载钩子配置 2. 管理钩子生命周期 3. 调用钩子并处理响应 4. 错误处理和重试 5. 超时控制",
+        "types.go": "钩子数据结构定义。包含各个钩子的请求/响应结构体",
+        "client.go": "HTTP 客户端封装。负责发送 Webhook 请求，支持超时、重试、错误处理",
+        "middleware.go": "钩子中间件。在请求生命周期的关键节点调用相应的钩子"
       }
     }
   },
@@ -133,35 +264,33 @@
     "usage_metering": {
       "enabled": true,
       "async": true,
-      "documentation": "异步用量计量。请求结束后启动 goroutine 收集用量数据（从响应的 usage 字段提取），通过 HTTP Webhook 上报。上报失败仅记录日志，不影响主流程。支持的后端：vLLM（需启用 --return-detailed-tokens）、TGI（默认支持）"
+      "documentation": "异步用量计量。请求结束后启动 goroutine 收集用量数据（从响应的 usage 字段提取），通过 HTTP Webhook 上报。上报数据包含：1. 完整的请求参数（request_body）2. 用量信息（usage）3. 用户信息（user_id、api_key）4. 元数据（endpoint、backend_url、latency 等）。上报失败仅记录日志，不影响主流程"
     },
     "intelligent_routing": {
       "enabled": true,
-      "documentation": "智能路由与故障转移。功能包括：1. 模型映射（用户友好名称 -> 实际模型名）2. 自动重试（指数退避策略，可配置重试次数和超时）3. 故障转移（主后端失败自动切换到备用后端，支持多级 fallback）4. 健康检查集成（自动摘除不健康节点）。配置示例见 docs/design-intelligent-routing.md",
+      "documentation": "智能路由与故障转移。功能包括：1. 自动重试（指数退避策略，可配置重试次数和超时）2. 故障转移（主后端失败自动切换到备用后端，支持多级 fallback）3. 健康检查集成（自动摘除不健康节点）。注意：不再提供模型映射功能，保持透明代理原则。配置示例见 docs/design-transparent-proxy.md",
       "components": {
-        "model_mapping": "将用户请求的模型名映射到实际后端模型，支持模型别名。例如：llama-3-70b -> llama-3-70b-instruct",
         "retry": "请求失败后自动重试，使用指数退避策略（initial_wait * multiplier^attempt）。可配置最大重试次数、初始等待时间、最大等待时间、退避倍数",
-        "fallback": "主后端失败后自动切换到备用后端。支持多级 fallback，可按模型配置不同的 fallback 规则。与健康检查集成，自动跳过不健康节点",
+        "fallback": "主后端失败后自动切换到备用后端。支持多级 fallback。与健康检查集成，自动跳过不健康节点",
         "load_balance_strategies": "扩展负载均衡策略：1. round_robin（轮询，已实现）2. least_connections（最少连接数）3. latency_based（延迟优先）"
       }
     },
     "authentication": {
       "enabled": true,
-      "documentation": "基础 API Key 鉴权。功能包括：1. API Key 验证（格式：sk-llmproxy-{32位随机字符}）2. IP 白名单/黑名单（CIDR 格式）3. 简单额度控制（Token 配额、重置周期）4. 模型访问权限控制 5. 过期时间检查。存储方式：配置文件（file）或 Redis。配置示例见 docs/design-api-key-management.md",
+      "documentation": "基础 API Key 鉴权。功能包括：1. API Key 验证（格式：sk-llmproxy-{32位随机字符}）2. IP 白名单/黑名单（CIDR 格式）3. 额度控制（Token 配额、重置周期）4. 过期时间检查。存储方式：配置文件（file）或 Redis。注意：不再提供模型级权限控制，权限控制由后端服务或 Webhook 接收方处理。配置示例见 docs/design-transparent-proxy.md",
       "components": {
         "key_validation": "验证 API Key 是否存在、是否启用、是否过期。Key 格式：sk-llmproxy-{32位随机字符}",
         "ip_control": "IP 白名单/黑名单控制，支持 CIDR 格式。优先检查黑名单，再检查白名单",
         "quota_management": "Token 额度管理。支持总额度设置、已用额度追踪、额度重置（daily/weekly/monthly/never）。额度不足时拒绝请求",
-        "permission_control": "模型访问权限控制。可限制每个 Key 只能访问特定模型。空列表表示允许所有模型",
         "storage": "支持两种存储方式：1. file（配置文件，适合小规模）2. redis（高性能，适合大规模）"
       }
     },
     "rate_limiting": {
       "enabled": true,
-      "documentation": "基础限流控制。功能包括：1. 全局 QPS 限制（保护推理服务）2. API Key 级 QPS 限制（防止单个 Key 滥用）3. 并发数限制（防止资源耗尽）4. Token 速率限制（TPM）。算法：令牌桶（支持突发流量）。存储：Redis（分布式）或内存（单机）。配置示例见 docs/design-rate-limiting.md",
+      "documentation": "基础限流控制。功能包括：1. 全局 QPS 限制（保护推理服务）2. API Key 级 QPS 限制（防止单个 Key 滥用）3. 并发数限制（防止资源耗尽）。算法：令牌桶（支持突发流量）。存储：Redis（分布式）或内存（单机）。注意：不再提供模型级限流，保持透明代理原则。配置示例见 docs/design-transparent-proxy.md",
       "components": {
         "global_limit": "全局 QPS/QPM 限制，保护后端推理服务不被打垮。支持突发流量（burst_size）",
-        "key_limit": "API Key 级限流。支持：1. requests_per_second（QPS）2. requests_per_minute（QPM）3. tokens_per_minute（TPM）4. max_concurrent（最大并发数）",
+        "key_limit": "API Key 级限流。支持：1. requests_per_second（QPS）2. requests_per_minute（QPM）3. max_concurrent（最大并发数）",
         "algorithm": "令牌桶算法。支持突发流量，平滑限流。使用 Redis Lua 脚本实现原子操作",
         "response_headers": "标准 HTTP 限流响应头：X-RateLimit-Limit、X-RateLimit-Remaining、X-RateLimit-Reset、Retry-After"
       }

@@ -15,17 +15,30 @@ import (
 
 // UsageRecord 用量记录
 type UsageRecord struct {
-	RequestID        string    `json:"request_id"`         // 请求 ID
-	UserID           string    `json:"user_id,omitempty"`  // 用户 ID
-	APIKey           string    `json:"api_key,omitempty"`  // API Key
-	Model            string    `json:"model"`              // 模型名称
-	PromptTokens     int       `json:"prompt_tokens"`      // 输入 token 数
-	CompletionTokens int       `json:"completion_tokens"`  // 输出 token 数
-	TotalTokens      int       `json:"total_tokens"`       // 总 token 数
-	IsStream         bool      `json:"is_stream"`          // 是否为流式请求
-	Endpoint         string    `json:"endpoint"`           // 请求端点
-	Timestamp        time.Time `json:"timestamp"`          // 时间戳
-	BackendURL       string    `json:"backend_url"`        // 后端 URL
+	RequestID   string    `json:"request_id"`        // 请求 ID
+	Timestamp   time.Time `json:"timestamp"`         // 时间戳
+	UserID      string    `json:"user_id,omitempty"` // 用户 ID
+	APIKey      string    `json:"api_key,omitempty"` // API Key
+	
+	// 完整的请求参数（不解析，完整透传）
+	RequestBody map[string]interface{} `json:"request_body"` // 用户的完整请求体
+	
+	// 用量信息（从响应中提取）
+	Usage       *UsageInfo `json:"usage,omitempty"`   // 用量信息
+	
+	// 元数据
+	Method      string `json:"method"`               // HTTP 方法
+	Path        string `json:"path"`                 // 请求路径
+	BackendURL  string `json:"backend_url"`          // 后端 URL
+	StatusCode  int    `json:"status_code"`          // 响应状态码
+	LatencyMs   int64  `json:"latency_ms"`           // 延迟（毫秒）
+}
+
+// UsageInfo 用量信息
+type UsageInfo struct {
+	PromptTokens     int `json:"prompt_tokens"`      // 输入 token 数
+	CompletionTokens int `json:"completion_tokens"`  // 输出 token 数
+	TotalTokens      int `json:"total_tokens"`       // 总 token 数
 }
 
 // OpenAIResponse OpenAI 标准响应格式
@@ -43,99 +56,94 @@ type OpenAIResponse struct {
 
 // collectUsage 从响应中收集用量信息
 // 参数：
-//   - reqBody: 请求体（用于提取 model 等信息）
+//   - reqBody: 请求体（完整保存）
 //   - respBody: 响应体
 //   - isStream: 是否为流式请求
 //   - backendURL: 后端 URL
 //   - endpoint: 请求端点
+//   - statusCode: 响应状态码
+//   - latencyMs: 请求延迟（毫秒）
 // 返回：
 //   - *UsageRecord: 用量记录，如果无法提取则返回 nil
-func collectUsage(reqBody []byte, respBody []byte, isStream bool, backendURL, endpoint string) *UsageRecord {
-	// 解析请求体获取 model
-	var req struct {
-		Model string `json:"model"`
+func collectUsage(reqBody []byte, respBody []byte, isStream bool, backendURL, endpoint string, statusCode int, latencyMs int64) *UsageRecord {
+	// 解析完整的请求体
+	var requestBodyMap map[string]interface{}
+	if err := json.Unmarshal(reqBody, &requestBodyMap); err != nil {
+		log.Printf("解析请求体失败: %v", err)
+		requestBodyMap = make(map[string]interface{})
 	}
-	json.Unmarshal(reqBody, &req)
+
+	// 提取用量信息
+	var usage *UsageInfo
+	var requestID string
 
 	// 非流式请求：直接解析完整响应
 	if !isStream {
 		var resp OpenAIResponse
 		if err := json.Unmarshal(respBody, &resp); err != nil {
 			log.Printf("解析响应失败: %v", err)
-			return nil
+		} else {
+			requestID = resp.ID
+			// 检查是否包含 usage 信息
+			if resp.Usage.PromptTokens > 0 || resp.Usage.CompletionTokens > 0 {
+				usage = &UsageInfo{
+					PromptTokens:     resp.Usage.PromptTokens,
+					CompletionTokens: resp.Usage.CompletionTokens,
+					TotalTokens:      resp.Usage.TotalTokens,
+				}
+			}
+		}
+	} else {
+		// 流式请求：解析 SSE 流中的最后一个 data 块
+		lines := bytes.Split(respBody, []byte("\n"))
+		var lastData []byte
+
+		for _, line := range lines {
+			line = bytes.TrimSpace(line)
+			if bytes.HasPrefix(line, []byte("data: ")) {
+				data := bytes.TrimPrefix(line, []byte("data: "))
+				if !bytes.Equal(data, []byte("[DONE]")) {
+					lastData = data
+				}
+			}
 		}
 
-		// 检查是否包含 usage 信息
-		if resp.Usage.PromptTokens == 0 && resp.Usage.CompletionTokens == 0 {
-			log.Println("响应中不包含 usage 信息，跳过计量")
-			return nil
-		}
+		if len(lastData) > 0 {
+			var chunk struct {
+				ID    string `json:"id"`
+				Usage *struct {
+					PromptTokens     int `json:"prompt_tokens"`
+					CompletionTokens int `json:"completion_tokens"`
+					TotalTokens      int `json:"total_tokens"`
+				} `json:"usage"`
+			}
 
-		return &UsageRecord{
-			RequestID:        resp.ID,
-			Model:            req.Model,
-			PromptTokens:     resp.Usage.PromptTokens,
-			CompletionTokens: resp.Usage.CompletionTokens,
-			TotalTokens:      resp.Usage.TotalTokens,
-			IsStream:         false,
-			Endpoint:         endpoint,
-			Timestamp:        time.Now(),
-			BackendURL:       backendURL,
-		}
-	}
-
-	// 流式请求：解析 SSE 流中的最后一个 data 块
-	// SSE 格式：data: {...}\n\ndata: [DONE]\n\n
-	lines := bytes.Split(respBody, []byte("\n"))
-	var lastData []byte
-
-	for _, line := range lines {
-		line = bytes.TrimSpace(line)
-		if bytes.HasPrefix(line, []byte("data: ")) {
-			data := bytes.TrimPrefix(line, []byte("data: "))
-			if !bytes.Equal(data, []byte("[DONE]")) {
-				lastData = data
+			if err := json.Unmarshal(lastData, &chunk); err != nil {
+				log.Printf("解析流式数据失败: %v", err)
+			} else {
+				requestID = chunk.ID
+				if chunk.Usage != nil && (chunk.Usage.PromptTokens > 0 || chunk.Usage.CompletionTokens > 0) {
+					usage = &UsageInfo{
+						PromptTokens:     chunk.Usage.PromptTokens,
+						CompletionTokens: chunk.Usage.CompletionTokens,
+						TotalTokens:      chunk.Usage.TotalTokens,
+					}
+				}
 			}
 		}
 	}
 
-	if len(lastData) == 0 {
-		log.Println("流式响应中未找到有效数据")
-		return nil
-	}
-
-	// 解析最后一个 data 块
-	var chunk struct {
-		ID      string `json:"id"`
-		Model   string `json:"model"`
-		Usage   *struct {
-			PromptTokens     int `json:"prompt_tokens"`
-			CompletionTokens int `json:"completion_tokens"`
-			TotalTokens      int `json:"total_tokens"`
-		} `json:"usage"`
-	}
-
-	if err := json.Unmarshal(lastData, &chunk); err != nil {
-		log.Printf("解析流式数据失败: %v", err)
-		return nil
-	}
-
-	// 检查是否包含 usage 信息
-	if chunk.Usage == nil || (chunk.Usage.PromptTokens == 0 && chunk.Usage.CompletionTokens == 0) {
-		log.Println("流式响应中不包含 usage 信息，跳过计量")
-		return nil
-	}
-
+	// 构造用量记录
 	return &UsageRecord{
-		RequestID:        chunk.ID,
-		Model:            req.Model,
-		PromptTokens:     chunk.Usage.PromptTokens,
-		CompletionTokens: chunk.Usage.CompletionTokens,
-		TotalTokens:      chunk.Usage.TotalTokens,
-		IsStream:         true,
-		Endpoint:         endpoint,
-		Timestamp:        time.Now(),
-		BackendURL:       backendURL,
+		RequestID:   requestID,
+		Timestamp:   time.Now(),
+		RequestBody: requestBodyMap,
+		Usage:       usage,
+		Method:      "POST",
+		Path:        endpoint,
+		BackendURL:  backendURL,
+		StatusCode:  statusCode,
+		LatencyMs:   latencyMs,
 	}
 }
 

@@ -6,10 +6,10 @@
 
 ## 二、核心功能
 
-### 2.1 模型映射
-- 将用户请求的模型名映射到实际后端模型
-- 支持模型别名（如 gpt-4 -> azure-gpt-4）
-- 支持版本映射（如 gpt-4 -> gpt-4-0125-preview）
+### 2.1 模型路由
+- 根据模型名选择对应的后端服务
+- 支持模型级别的后端绑定
+- 支持通配符匹配（如 llama-3* 匹配所有 llama-3 系列）
 
 ### 2.2 自动重试
 - 请求失败后自动重试
@@ -36,9 +36,6 @@
 ### 3.1 路由配置
 ```go
 type RoutingConfig struct {
-    // 模型映射
-    ModelMapping map[string]string `yaml:"model_mapping"`
-    
     // 重试配置
     Retry RetryConfig `yaml:"retry"`
     
@@ -47,9 +44,6 @@ type RoutingConfig struct {
     
     // 负载均衡策略
     LoadBalanceStrategy string `yaml:"load_balance_strategy"`
-    
-    // 成本优化
-    CostOptimization CostOptimizationConfig `yaml:"cost_optimization"`
 }
 
 type RetryConfig struct {
@@ -110,19 +104,7 @@ type CostBasedBalancer struct {
 
 ## 四、实现方案
 
-### 4.1 模型映射
-
-```go
-func (r *Router) MapModel(requestedModel string) string {
-    if mapped, ok := r.config.ModelMapping[requestedModel]; ok {
-        log.Infof("Model mapped: %s -> %s", requestedModel, mapped)
-        return mapped
-    }
-    return requestedModel
-}
-```
-
-### 4.2 自动重试（指数退避）
+### 4.1 自动重试（指数退避）
 
 ```go
 func (r *Router) ProxyWithRetry(c *gin.Context, backend *Backend) error {
@@ -173,7 +155,7 @@ func shouldRetry(err error) bool {
 }
 ```
 
-### 4.3 故障转移
+### 4.2 故障转移
 
 ```go
 func (r *Router) ProxyWithFallback(c *gin.Context, model string) error {
@@ -232,7 +214,7 @@ func (r *Router) findFallbackRule(model string) *FallbackRule {
 }
 ```
 
-### 4.4 最少连接数负载均衡
+### 4.3 最少连接数负载均衡
 
 ```go
 func (lb *LeastConnectionsBalancer) Next(model string) (*Backend, error) {
@@ -277,7 +259,7 @@ func (lb *LeastConnectionsBalancer) RecordResult(backend *Backend, latency time.
 }
 ```
 
-### 4.5 响应时间优先负载均衡
+### 4.4 响应时间优先负载均衡
 
 ```go
 func (lb *LatencyBasedBalancer) Next(model string) (*Backend, error) {
@@ -327,62 +309,19 @@ func (lb *LatencyBasedBalancer) RecordResult(backend *Backend, latency time.Dura
 }
 ```
 
-### 4.6 成本优先负载均衡
 
-```go
-func (lb *CostBasedBalancer) Next(model string) (*Backend, error) {
-    lb.mu.RLock()
-    defer lb.mu.RUnlock()
-    
-    var selected *Backend
-    minPrice := float64(1<<63 - 1)
-    
-    for _, backend := range lb.backends {
-        if !backend.Healthy {
-            continue
-        }
-        
-        // 获取该后端的模型价格
-        price := lb.getPrice(backend, model)
-        if price < minPrice {
-            minPrice = price
-            selected = backend
-        }
-    }
-    
-    if selected == nil {
-        return nil, fmt.Errorf("no healthy backend available")
-    }
-    
-    return selected, nil
-}
-
-func (lb *CostBasedBalancer) getPrice(backend *Backend, model string) float64 {
-    key := fmt.Sprintf("%s:%s", backend.URL, model)
-    if price, ok := lb.prices[key]; ok {
-        return price
-    }
-    
-    // 默认价格
-    if price, ok := lb.prices[model]; ok {
-        return price
-    }
-    
-    return 1.0  // 默认价格
-}
-```
 
 ## 五、配置示例
 
 ```yaml
 # config.yaml
+backends:
+  - url: "http://vllm-1:8000"
+    models: ["llama-3*", "mistral*"]  # 支持通配符
+  - url: "http://vllm-2:8000"
+    models: ["qwen*"]
+
 routing:
-  # 模型映射
-  model_mapping:
-    "gpt-4": "azure-gpt-4"
-    "gpt-4-turbo": "gpt-4-0125-preview"
-    "claude-3-opus": "bedrock-claude-3-opus"
-  
   # 重试配置
   retry:
     enabled: true
@@ -396,26 +335,10 @@ routing:
     - primary: "http://vllm-1:8000"
       fallback:
         - "http://vllm-2:8000"
-        - "http://tgi-1:8081"
-      models: ["llama-3", "mistral"]
-    
-    - primary: "http://openai-proxy:8000"
-      fallback:
-        - "http://azure-openai:8000"
-      models: ["gpt-4", "gpt-3.5-turbo"]
+      models: ["llama-3*", "mistral*"]
   
   # 负载均衡策略
-  load_balance_strategy: "least_connections"  # round_robin, least_connections, latency_based, cost_based
-  
-  # 成本优化
-  cost_optimization:
-    enabled: true
-    prefer_cheaper: true
-    model_prices:
-      "gpt-4": 30.0           # $30 per 1M tokens
-      "gpt-3.5-turbo": 0.5    # $0.5 per 1M tokens
-      "claude-3-opus": 15.0
-      "llama-3-70b": 0.8
+  load_balance_strategy: "least_connections"  # round_robin, least_connections, latency_based
 ```
 
 ## 六、监控指标
@@ -432,17 +355,13 @@ routing_backend_errors_total{backend, model, reason}  // 后端错误数
 ## 七、实现优先级
 
 ### Phase 1（核心功能）
-- [x] 模型映射
 - [x] 自动重试（指数退避）
 - [x] 故障转移（Fallback）
+- [x] 轮询负载均衡
 
 ### Phase 2（负载均衡扩展）
-- [ ] 最少连接数策略
-- [ ] 响应时间优先策略
-
-### Phase 3（成本优化）
-- [ ] 成本优先策略
-- [ ] 成本统计与报表
+- [x] 最少连接数策略
+- [x] 响应时间优先策略
 
 ---
 

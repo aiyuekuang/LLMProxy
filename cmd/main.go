@@ -75,9 +75,6 @@ func main() {
 	if cfg.Routing != nil {
 		router = routing.NewRouter(cfg.Routing, loadBalancer, backends)
 		log.Println("智能路由已启用")
-		if len(cfg.Routing.ModelMapping) > 0 {
-			log.Printf("模型映射: %d 个", len(cfg.Routing.ModelMapping))
-		}
 		if cfg.Routing.Retry.Enabled {
 			log.Printf("自动重试已启用: 最大 %d 次", cfg.Routing.Retry.MaxRetries)
 		}

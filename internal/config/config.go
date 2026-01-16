@@ -31,7 +31,6 @@ type HealthCheck struct {
 
 // RoutingConfig 路由配置
 type RoutingConfig struct {
-	ModelMapping        map[string]string `yaml:"model_mapping"`
 	Retry               RetryConfig       `yaml:"retry"`
 	Fallback            []FallbackRule    `yaml:"fallback"`
 	LoadBalanceStrategy string            `yaml:"load_balance_strategy"`
@@ -76,7 +75,6 @@ type APIKey struct {
 	UsedQuota        int64      `yaml:"used_quota" json:"used_quota"`
 	QuotaResetPeriod string     `yaml:"quota_reset_period" json:"quota_reset_period"`
 	LastResetAt      time.Time  `yaml:"last_reset_at" json:"last_reset_at"`
-	AllowedModels    []string   `yaml:"allowed_models" json:"allowed_models"`
 	AllowedIPs       []string   `yaml:"allowed_ips" json:"allowed_ips"`
 	DeniedIPs        []string   `yaml:"denied_ips" json:"denied_ips"`
 	ExpiresAt        *time.Time `yaml:"expires_at" json:"expires_at"`
@@ -86,11 +84,10 @@ type APIKey struct {
 
 // RateLimitConfig 限流配置
 type RateLimitConfig struct {
-	Enabled  bool                    `yaml:"enabled"`
-	Storage  string                  `yaml:"storage"`
-	Global   *GlobalLimit            `yaml:"global"`
-	PerKey   *KeyLimit               `yaml:"per_key"`
-	PerModel map[string]*ModelLimit  `yaml:"per_model"`
+	Enabled  bool         `yaml:"enabled"`
+	Storage  string       `yaml:"storage"`
+	Global   *GlobalLimit `yaml:"global"`
+	PerKey   *KeyLimit    `yaml:"per_key"`
 }
 
 // GlobalLimit 全局限流配置
@@ -111,10 +108,24 @@ type KeyLimit struct {
 	BurstSize         int   `yaml:"burst_size"`
 }
 
-// ModelLimit 模型级限流配置
-type ModelLimit struct {
-	RequestsPerMinute int   `yaml:"requests_per_minute"`
-	TokensPerMinute   int64 `yaml:"tokens_per_minute"`
+// ScriptsConfig Lua 脚本配置
+type ScriptsConfig struct {
+	Routing           *ScriptConfig `yaml:"routing"`
+	Auth              *ScriptConfig `yaml:"auth"`
+	RequestTransform  *ScriptConfig `yaml:"request_transform"`
+	ResponseTransform *ScriptConfig `yaml:"response_transform"`
+	RateLimit         *ScriptConfig `yaml:"rate_limit"`
+	Usage             *ScriptConfig `yaml:"usage"`
+	ErrorHandler      *ScriptConfig `yaml:"error_handler"`
+}
+
+// ScriptConfig 单个脚本配置
+type ScriptConfig struct {
+	Enabled    bool          `yaml:"enabled"`
+	Script     string        `yaml:"script"`
+	ScriptFile string        `yaml:"script_file"`
+	Timeout    time.Duration `yaml:"timeout"`
+	MaxMemory  int           `yaml:"max_memory"`
 }
 
 // Config 主配置结构
@@ -127,6 +138,7 @@ type Config struct {
 	Auth        *AuthConfig      `yaml:"auth"`
 	APIKeys     []*APIKey        `yaml:"api_keys"`
 	RateLimit   *RateLimitConfig `yaml:"rate_limit"`
+	Scripts     *ScriptsConfig   `yaml:"scripts"` // Lua 脚本配置
 }
 
 // Load 从文件加载配置

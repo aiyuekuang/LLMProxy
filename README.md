@@ -31,11 +31,11 @@ LLMProxy 专为 **自建推理服务**（vLLM、TGI、自研引擎）设计，�
 - ✅ **零性能侵入** - 主请求路径不解析响应体、不连接数据库、不调用外部服务
 - ✅ **连接复用** - HTTP 客户端复用连接，减少握手开销
 
-### 🎯 智能路由
-- ✅ **模型映射** - 用户友好名称自动映射到实际模型（如 `llama-3-70b` → `llama-3-70b-instruct`）
+### 🎯 透明代理
+- ✅ **完全透传** - 不关心业务参数（如 model），完全透传所有请求参数到后端
 - ✅ **自动重试** - 指数退避策略，网络抖动自动重试
-- ✅ **故障转移** - 主实例失败自动切换到备用实例
 - ✅ **多种负载均衡** - 轮询、最少连接数、延迟优先
+- ✅ **灵活路由** - 支持通过 Webhook 实现自定义路由逻辑
 
 ### 🔐 基础鉴权
 - ✅ **API Key 管理** - 简单的 Key 验证和额度控制
@@ -50,10 +50,11 @@ LLMProxy 专为 **自建推理服务**（vLLM、TGI、自研引擎）设计，�
 - ✅ **令牌桶算法** - 支持突发流量
 
 ### 📊 监控计量
+- ✅ **完整请求透传** - Webhook 接收完整的请求参数和响应数据
 - ✅ **异步用量计量** - 请求结束后，后台异步上报 `prompt_tokens` + `completion_tokens`
 - ✅ **Prometheus 指标** - 请求量、延迟、错误率等
 - ✅ **Grafana 面板** - 预配置监控面板
-- ✅ **Webhook 对接** - 将用量数据推送给业务系统
+- ✅ **灵活扩展** - 通过 Webhook 实现自定义业务逻辑（权限控制、模型映射、计费等）
 
 ## 真实使用场景
 
@@ -148,15 +149,13 @@ rate_limit:
 **配置：**
 ```yaml
 backends:
-  - url: "http://vllm-llama70b-1:8000"
-    models: ["llama-3-70b*"]
-  - url: "http://vllm-qwen-1:8000"
-    models: ["qwen-72b*"]
+  - url: "http://vllm-server-1:8000"
+  - url: "http://vllm-server-2:8000"
 
 routing:
-  model_mapping:
-    "llama-3-70b": "llama-3-70b-instruct"
-    "qwen": "qwen-72b-chat"
+  retry:
+    enabled: true
+    max_retries: 2
 
 auth:
   enabled: true
@@ -257,15 +256,10 @@ health_check:
   path: /health
 ```
 
-### 智能路由配置
+### 路由配置
 
 ```yaml
 routing:
-  # 模型映射
-  model_mapping:
-    "llama-3-70b": "llama-3-70b-instruct"
-    "qwen": "qwen-72b-chat"
-  
   # 重试配置
   retry:
     enabled: true
@@ -273,14 +267,6 @@ routing:
     initial_wait: 1s
     max_wait: 10s
     multiplier: 2.0
-  
-  # 故障转移
-  fallback:
-    - primary: "http://vllm-1:8000"
-      fallback:
-        - "http://vllm-2:8000"
-        - "http://tgi-1:8081"
-      models: ["llama-3", "mistral"]
   
   # 负载均衡策略
   load_balance_strategy: "least_connections"  # round_robin, least_connections, latency_based
@@ -306,7 +292,6 @@ api_keys:
     status: "active"
     total_quota: 100000
     quota_reset_period: "daily"
-    allowed_models: ["llama-3-70b"]
     allowed_ips: ["192.168.1.0/24"]
     expires_at: "2026-12-31T23:59:59Z"
 ```
@@ -331,12 +316,6 @@ rate_limit:
     requests_per_minute: 500
     tokens_per_minute: 100000  # TPM 限制
     max_concurrent: 5
-  
-  # 模型级限流
-  per_model:
-    llama-3-70b:
-      requests_per_minute: 100
-      tokens_per_minute: 50000
 ```
 
 完整配置示例请参考：[config.yaml.example](config.yaml.example)
@@ -360,23 +339,37 @@ python -m vllm.entrypoints.openai.api_server \
 
 ## Webhook 数据格式
 
-LLMProxy 会向配置的 Webhook URL 发送 POST 请求：
+LLMProxy 会向配置的 Webhook URL 发送 POST 请求，**完整透传用户的所有请求参数**：
 
 ```json
 {
   "request_id": "req_abc123",
   "user_id": "user_alice",
   "api_key": "sk-prod-xxx",
-  "model": "meta-llama/Llama-3-8b",
-  "prompt_tokens": 15,
-  "completion_tokens": 42,
-  "total_tokens": 57,
+  "request_body": {
+    "model": "meta-llama/Llama-3-8b",
+    "messages": [{"role": "user", "content": "你好"}],
+    "temperature": 0.7,
+    "max_tokens": 100
+  },
+  "usage": {
+    "prompt_tokens": 15,
+    "completion_tokens": 42,
+    "total_tokens": 57
+  },
   "is_stream": true,
   "endpoint": "/v1/chat/completions",
   "timestamp": "2026-01-14T10:30:00Z",
-  "backend_url": "http://vllm:8000"
+  "backend_url": "http://vllm:8000",
+  "latency_ms": 1234,
+  "status_code": 200
 }
 ```
+
+**透明代理设计理念：**
+- LLMProxy 不关心业务参数（如 model），完全透传所有请求参数
+- 业务逻辑（权限控制、模型映射、计费等）由 Webhook 接收方处理
+- 这使得 LLMProxy 保持简单、高性能，同时提供最大的灵活性
 
 ### 业务系统接收示例（Python Flask）
 
@@ -384,11 +377,27 @@ LLMProxy 会向配置的 Webhook URL 发送 POST 请求：
 @app.route('/llm-usage', methods=['POST'])
 def record_usage():
     data = request.json
+    
+    # 获取用户请求的完整参数
+    request_body = data.get('request_body', {})
+    model = request_body.get('model', 'unknown')
+    
+    # 获取用量信息
+    usage = data.get('usage', {})
+    prompt_tokens = usage.get('prompt_tokens', 0)
+    completion_tokens = usage.get('completion_tokens', 0)
+    
     # 写入数据库
     db.execute(
         "INSERT INTO billing_events (customer, input_tk, output_tk, model) VALUES (?, ?, ?, ?)",
-        data['user_id'], data['prompt_tokens'], data['completion_tokens'], data['model']
+        data['user_id'], prompt_tokens, completion_tokens, model
     )
+    
+    # 可以在这里实现自定义业务逻辑：
+    # - 模型权限检查
+    # - 自定义计费规则
+    # - 数据分析和统计
+    
     return {"status": "ok"}
 ```
 

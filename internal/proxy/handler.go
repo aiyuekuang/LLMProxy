@@ -16,11 +16,9 @@ import (
 	"llmproxy/internal/routing"
 )
 
-// RequestBody 请求体结构
+// RequestBody 请求体结构（仅用于提取 stream 参数）
 type RequestBody struct {
-	Model    string                   `json:"model"`
-	Messages []map[string]interface{} `json:"messages"`
-	Stream   bool                     `json:"stream"`
+	Stream bool `json:"stream"`
 }
 
 // NewHandler 创建代理处理器
@@ -57,7 +55,7 @@ func NewHandler(cfg *config.Config, loadBalancer lb.LoadBalancer, router *routin
 		}
 		defer r.Body.Close()
 
-		// 4. 解析请求体，提取 stream 和 model 参数
+		// 4. 解析请求体，仅提取 stream 参数
 		var reqBody RequestBody
 		if err := json.Unmarshal(bodyBytes, &reqBody); err != nil {
 			log.Printf("解析请求体失败: %v", err)
@@ -65,39 +63,16 @@ func NewHandler(cfg *config.Config, loadBalancer lb.LoadBalancer, router *routin
 			return
 		}
 
-		// 5. 模型映射
-		originalModel := reqBody.Model
-		if router != nil {
-			reqBody.Model = router.MapModel(reqBody.Model)
-			// 更新请求体中的模型名
-			if reqBody.Model != originalModel {
-				bodyBytes, _ = json.Marshal(reqBody)
-			}
-		}
-
-		// 6. 检查模型访问权限（如果启用鉴权）
-		if keyStore != nil {
-			apiKeyStr := extractAPIKey(r)
-			if apiKeyStr != "" {
-				key, err := keyStore.Get(apiKeyStr)
-				if err == nil && !auth.CheckModelAllowed(key, reqBody.Model) {
-					log.Printf("模型访问被拒绝: model=%s, key=%s", reqBody.Model, maskKey(apiKeyStr))
-					http.Error(w, `{"error":"Model not allowed"}`, http.StatusForbidden)
-					return
-				}
-			}
-		}
-
-		// 7. 选择后端并发送请求
+		// 5. 选择后端并发送请求
 		var resp *http.Response
 		var backend *lb.Backend
 		
 		if router != nil {
 			// 使用智能路由（带重试和故障转移）
-			resp, backend, err = router.ProxyRequest(r, bodyBytes, reqBody.Model)
+			resp, backend, err = router.ProxyRequest(r, bodyBytes, "")
 		} else {
 			// 使用简单负载均衡
-			backend = loadBalancer.Next(reqBody.Model)
+			backend = loadBalancer.Next("")
 			if backend == nil {
 				log.Println("没有可用的健康后端")
 				http.Error(w, "No healthy backend", http.StatusServiceUnavailable)
@@ -116,9 +91,9 @@ func NewHandler(cfg *config.Config, loadBalancer lb.LoadBalancer, router *routin
 		}
 		defer resp.Body.Close()
 
-		log.Printf("请求转发到后端: %s, stream=%v, model=%s", backend.URL, reqBody.Stream, reqBody.Model)
+		log.Printf("请求转发到后端: %s, stream=%v", backend.URL, reqBody.Stream)
 
-		// 8. 读取响应体（用于用量收集）
+		// 6. 读取响应体（用于用量收集）
 		respBody, err := io.ReadAll(resp.Body)
 		if err != nil {
 			log.Printf("读取响应体失败: %v", err)
@@ -127,7 +102,7 @@ func NewHandler(cfg *config.Config, loadBalancer lb.LoadBalancer, router *routin
 			return
 		}
 
-		// 9. 透传响应到客户端
+		// 7. 透传响应到客户端
 		if reqBody.Stream {
 			// 流式响应
 			w.Header().Set("Content-Type", "text/event-stream")
@@ -142,25 +117,36 @@ func NewHandler(cfg *config.Config, loadBalancer lb.LoadBalancer, router *routin
 			w.Write(respBody)
 		}
 
-		// 10. 记录请求指标
+		// 8. 记录请求指标
 		latency := float64(time.Since(start).Milliseconds())
 		metrics.RecordRequest(r.URL.Path, reqBody.Stream, backend.URL, latency, resp.StatusCode)
 
 		log.Printf("请求完成: status=%d, latency=%dms", resp.StatusCode, int(latency))
 
-		// 11. 异步触发用量上报和额度扣减
+		// 9. 异步触发用量上报和额度扣减
 		go func() {
-			usage := collectUsage(bodyBytes, respBody, reqBody.Stream, backend.URL, r.URL.Path)
+			usage := collectUsage(bodyBytes, respBody, reqBody.Stream, backend.URL, r.URL.Path, resp.StatusCode, int64(latency))
 			if usage != nil {
-				// 记录 Token 使用量指标
-				metrics.RecordUsage(usage.PromptTokens, usage.CompletionTokens)
-				
-				// 扣减额度（如果启用鉴权）
+				// 添加用户信息
 				if keyStore != nil {
 					apiKeyStr := extractAPIKey(r)
 					if apiKeyStr != "" {
-						totalTokens := int64(usage.PromptTokens + usage.CompletionTokens)
-						keyStore.IncrementUsedQuota(apiKeyStr, totalTokens)
+						key, err := keyStore.Get(apiKeyStr)
+						if err == nil {
+							usage.UserID = key.UserID
+							usage.APIKey = apiKeyStr
+						}
+					}
+				}
+				
+				// 记录 Token 使用量指标（如果有 usage 信息）
+				if usage.Usage != nil {
+					metrics.RecordUsage(usage.Usage.PromptTokens, usage.Usage.CompletionTokens)
+					
+					// 扣减额度（如果启用鉴权）
+					if keyStore != nil && usage.APIKey != "" {
+						totalTokens := int64(usage.Usage.PromptTokens + usage.Usage.CompletionTokens)
+						keyStore.IncrementUsedQuota(usage.APIKey, totalTokens)
 					}
 				}
 				

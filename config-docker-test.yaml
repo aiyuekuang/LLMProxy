@@ -1,0 +1,31 @@
+# LLMProxy Docker 测试配置
+
+# 监听地址
+listen: ":8000"
+
+# 后端服务器列表（使用 OpenAI 作为测试后端）
+backends:
+  - url: "https://api.openai.com"
+    weight: 1
+
+# 用量上报 Webhook 配置（测试时禁用）
+usage_hook:
+  enabled: false
+  url: "http://localhost:5002/api/v1/usage/report"
+  timeout: 1s
+  retry: 2
+
+# 健康检查配置
+health_check:
+  interval: 30s
+  path: /health
+
+# 鉴权配置（测试时禁用）
+auth:
+  enabled: false
+  storage: file
+
+# 限流配置（测试时禁用）
+rate_limit:
+  enabled: false
+  storage: memory

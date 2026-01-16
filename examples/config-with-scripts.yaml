@@ -1,0 +1,124 @@
+# LLMProxy 配置示例（包含 Lua 脚本）
+
+listen: ":8000"
+
+# 后端服务器列表
+backends:
+  - url: "http://standard-backend:8000"
+    name: "standard"
+    weight: 10
+  - url: "http://high-performance-backend:8000"
+    name: "high-performance"
+    weight: 10
+  - url: "http://ultra-backend:8000"
+    name: "ultra"
+    weight: 10
+
+# 用量上报 Webhook
+usage_hook:
+  enabled: true
+  url: "http://billing-service:8080/api/v1/usage"
+  timeout: 2s
+  retry: 3
+
+# 健康检查
+health_check:
+  interval: 10s
+  path: /health
+
+# 路由配置
+routing:
+  retry:
+    enabled: true
+    max_retries: 3
+    initial_wait: 1s
+    max_wait: 10s
+    multiplier: 2.0
+  load_balance_strategy: "least_connections"
+
+# 鉴权配置
+auth:
+  enabled: true
+  storage: "file"
+  defaults:
+    quota_reset_period: "monthly"
+    total_quota: 1000000
+
+# API Keys
+api_keys:
+  - key: "sk-llmproxy-vip-001"
+    name: "VIP 用户"
+    user_id: "user_vip_001"
+    status: "active"
+    total_quota: 5000000
+    quota_reset_period: "monthly"
+    allowed_ips: ["0.0.0.0/0"]
+  
+  - key: "sk-llmproxy-normal-001"
+    name: "普通用户"
+    user_id: "user_normal_001"
+    status: "active"
+    total_quota: 100000
+    quota_reset_period: "monthly"
+    allowed_ips: ["0.0.0.0/0"]
+
+# 限流配置
+rate_limit:
+  enabled: true
+  storage: "memory"
+  global:
+    enabled: true
+    requests_per_second: 1000
+    burst_size: 2000
+  per_key:
+    enabled: true
+    requests_per_second: 10
+    requests_per_minute: 500
+    tokens_per_minute: 100000
+    max_concurrent: 5
+    burst_size: 20
+
+# Lua 脚本配置
+scripts:
+  # 路由决策脚本
+  routing:
+    enabled: true
+    script_file: "/etc/llmproxy/scripts/routing.lua"
+    timeout: 100ms
+    max_memory: 10485760  # 10MB
+  
+  # 鉴权决策脚本
+  auth:
+    enabled: true
+    script_file: "/etc/llmproxy/scripts/auth.lua"
+    timeout: 100ms
+  
+  # 请求转换脚本
+  request_transform:
+    enabled: true
+    script_file: "/etc/llmproxy/scripts/request_transform.lua"
+    timeout: 50ms
+  
+  # 响应转换脚本
+  response_transform:
+    enabled: true
+    script_file: "/etc/llmproxy/scripts/response_transform.lua"
+    timeout: 50ms
+  
+  # 限流决策脚本
+  rate_limit:
+    enabled: true
+    script_file: "/etc/llmproxy/scripts/rate_limit.lua"
+    timeout: 50ms
+  
+  # 用量计算脚本
+  usage:
+    enabled: true
+    script_file: "/etc/llmproxy/scripts/usage.lua"
+    timeout: 50ms
+  
+  # 错误处理脚本
+  error_handler:
+    enabled: true
+    script_file: "/etc/llmproxy/scripts/error_handler.lua"
+    timeout: 50ms

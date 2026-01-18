@@ -7,6 +7,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-01-18
+
+### Added
+
+#### 可编排的多源鉴权管道（Auth Pipeline）
+- **多数据源支持**：配置文件（file）、Redis、数据库（MySQL/PostgreSQL/SQLite）、Webhook
+- **Lua 脚本决策**：每个 Provider 支持自定义 Lua 脚本，灵活控制放行/拒绝逻辑
+- **可编排顺序**：用户可自由调整 Provider 执行顺序
+- **两种管道模式**：
+  - `first_match`：第一个成功即放行
+  - `all`：全部通过才放行
+- **JSON 错误响应**：标准化错误返回格式，包含错误消息和状态码
+- **自定义认证 Header**：支持配置任意 Header 名称列表
+
+#### 新增文件
+- `internal/auth/pipeline/` - 完整的管道鉴权模块
+  - `types.go` - 类型定义
+  - `provider.go` - Provider 接口
+  - `provider_file.go` - 配置文件 Provider
+  - `provider_redis.go` - Redis Provider
+  - `provider_database.go` - 数据库 Provider
+  - `provider_webhook.go` - Webhook Provider
+  - `lua_executor.go` - Lua 脚本执行器
+  - `executor.go` - 管道执行器
+  - `middleware.go` - 管道中间件
+  - `config.go` - 配置转换
+- `docs/auth-pipeline.md` - 完整的鉴权管道文档
+
+### Changed
+- **配置结构扩展**：`AuthConfig` 新增 `pipeline`、`mode`、`header_names` 字段
+- **Dockerfile 优化**：支持 `go mod tidy` 自动下载依赖
+- **兼容旧配置**：不配置 `pipeline` 时自动使用旧的 `storage: file` 模式
+
+### Dependencies
+- 新增 `github.com/redis/go-redis/v9` - Redis 客户端
+- 新增 `github.com/go-sql-driver/mysql` - MySQL 驱动
+- 新增 `github.com/lib/pq` - PostgreSQL 驱动
+- 新增 `modernc.org/sqlite` - SQLite 驱动（纯 Go，无需 CGO）
+- 新增 `github.com/yuin/gopher-lua` - Lua 脚本引擎
+- 新增 `layeh.com/gopher-luar` - Go/Lua 数据转换
+
+---
+
+## [0.2.1] - 2026-01-18
+
 ### Changed
 - **[Breaking]** 删除模型相关概念，实现完全透明代理
   - 删除 `allowed_models` 配置项（API Key 不再限制模型访问）

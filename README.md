@@ -37,11 +37,14 @@ LLMProxy 专为 **自建推理服务**（vLLM、TGI、自研引擎）设计，�
 - ✅ **多种负载均衡** - 轮询、最少连接数、延迟优先
 - ✅ **灵活路由** - 支持通过 Webhook 实现自定义路由逻辑
 
-### 🔐 基础鉴权
-- ✅ **API Key 管理** - 简单的 Key 验证和额度控制
+### 🔐 可编排鉴权管道 (v0.3.0 新增)
+- ✅ **多数据源支持** - 配置文件 / Redis / 数据库（MySQL/PostgreSQL/SQLite）/ Webhook
+- ✅ **Lua 脚本决策** - 自定义鉴权逻辑，灵活控制放行/拒绝
+- ✅ **可编排顺序** - 自由调整 Provider 执行顺序
+- ✅ **两种管道模式** - `first_match`（首个成功即放行）或 `all`（全部通过）
+- ✅ **自定义认证 Header** - 支持配置任意 Header 名称
 - ✅ **IP 白名单** - 防止未授权访问
 - ✅ **额度管理** - Token 配额、自动重置（按天/周/月）
-- ✅ **配置文件存储** - 无需数据库，极简部署
 
 ### 🛡️ 限流保护
 - ✅ **全局限流** - 保护推理服务不被打垮
@@ -272,19 +275,39 @@ routing:
   load_balance_strategy: "least_connections"  # round_robin, least_connections, latency_based
 ```
 
-### 鉴权配置
+### 鉴权配置（v0.3.0 管道模式）
 
 ```yaml
 auth:
   enabled: true
-  storage: "file"  # 或 "redis"
+  header_names: ["Authorization", "X-API-Key"]
+  mode: "first_match"  # first_match | all
   
-  # 默认配置
-  defaults:
-    quota_reset_period: "monthly"
-    total_quota: 1000000
+  pipeline:
+    # 1. Redis 验证（生产环境）
+    - name: "redis_auth"
+      type: "redis"
+      enabled: true
+      redis:
+        addr: "localhost:6379"
+        key_pattern: "llmproxy:key:{api_key}"
+      lua_script: |
+        if tonumber(data.balance or 0) <= 0 then
+          return {allow = false, message = "余额不足，请充值"}
+        end
+        return {allow = true}
+    
+    # 2. 配置文件验证（开发环境）
+    - name: "config_file"
+      type: "file"
+      enabled: true
+      lua_script: |
+        if data.status ~= "active" then
+          return {allow = false, message = "Key 已禁用"}
+        end
+        return {allow = true}
 
-# API Keys
+# API Keys（用于 file provider）
 api_keys:
   - key: "sk-llmproxy-test123"
     name: "测试 Key"
@@ -527,6 +550,16 @@ LLMProxy 会自动重试（根据配置的 `retry` 次数），失败仅记录�
 ### 4. 支持哪些负载均衡策略？
 
 当前支持加权轮询（Weighted Round Robin），后续可扩展最少连接等策略。
+
+## 文档
+
+| 文档 | 说明 |
+|------|------|
+| [鉴权管道详细文档](docs/auth-pipeline.md) | 多源鉴权管道配置、Lua 脚本示例 |
+| [开发文档](docs/development-guide.md) | 架构设计、核心模块、开发指南、API 参考 |
+| [OpenCode 集成](docs/opencode-integration.md) | 与 OpenCode 等 AI 编码助手集成 |
+| [Docker 发布指南](docs/docker-publish-guide.md) | Docker 镜像构建与发布 |
+| [更新日志](CHANGELOG.md) | 版本更新记录 |
 
 ## 许可证
 

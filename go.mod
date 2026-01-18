@@ -3,8 +3,14 @@ module llmproxy
 go 1.22
 
 require (
+	github.com/go-sql-driver/mysql v1.8.1
+	github.com/lib/pq v1.10.9
 	github.com/prometheus/client_golang v1.19.0
+	github.com/redis/go-redis/v9 v9.7.0
+	github.com/yuin/gopher-lua v1.1.1
 	gopkg.in/yaml.v3 v3.0.1
+	layeh.com/gopher-luar v1.0.11
+	modernc.org/sqlite v1.34.4
 )
 
 require (

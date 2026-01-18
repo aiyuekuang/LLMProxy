@@ -7,6 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-01-18
+
+### Added
+
+#### 用量上报多配置支持
+- **多上报器支持**：可同时配置多个 Webhook 和数据库上报器
+- **数据库直写**：支持 MySQL/PostgreSQL/SQLite 直接写入用量数据
+- **自动建表**：首次启动自动创建用量表（如果不存在）
+- **独立开关**：每个上报器可独立启用/禁用
+
+#### 配置示例
+```yaml
+usage_hook:
+  enabled: true
+  reporters:
+    - name: "mysql_usage"
+      type: "database"
+      enabled: true
+      database:
+        driver: "mysql"
+        dsn: "user:pass@tcp(localhost:3306)/llmproxy"
+    - name: "billing_webhook"
+      type: "webhook"
+      enabled: true
+      url: "https://billing.example.com/api/usage"
+```
+
+### Changed
+- **配置结构重构**：`usage_hook` 改为 `reporters` 数组格式
+- **移除旧配置兼容**：简化代码，不再兼容旧版鉴权配置
+
+---
+
+## [0.3.1] - 2026-01-18
+
+### Changed
+- 移除旧配置兼容代码，简化鉴权管道
+
+---
+
 ## [0.3.0] - 2026-01-18
 
 ### Added

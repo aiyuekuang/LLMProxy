@@ -246,11 +246,21 @@ backends:
   - url: "http://tgi:8081"
     weight: 3
 
-# 用量上报 Webhook 配置
+# 用量上报配置（支持多上报器）
 usage_hook:
   enabled: true
-  url: "https://your-billing.com/llm-usage"
-  timeout: 1s
+  reporters:
+    - name: "billing"
+      type: "webhook"
+      enabled: true
+      url: "https://your-billing.com/llm-usage"
+      timeout: 3s
+    - name: "database"
+      type: "database"
+      enabled: true
+      database:
+        driver: "mysql"
+        dsn: "user:pass@tcp(localhost:3306)/llmproxy"
   retry: 2
 
 # 健康检查配置

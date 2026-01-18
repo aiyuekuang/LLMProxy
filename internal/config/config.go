@@ -15,12 +15,31 @@ type Backend struct {
 	Models []string `yaml:"models"` // 支持的模型列表，空表示支持所有模型
 }
 
-// UsageHook 用量上报 Webhook 配置
-type UsageHook struct {
-	Enabled bool          `yaml:"enabled"` // 是否启用
-	URL     string        `yaml:"url"`     // Webhook URL
-	Timeout time.Duration `yaml:"timeout"` // 超时时间
-	Retry   int           `yaml:"retry"`   // 重试次数
+// UsageConfig 用量上报配置
+type UsageConfig struct {
+	Enabled   bool            `yaml:"enabled"`   // 是否启用
+	Reporters []*UsageReporter `yaml:"reporters"` // 上报器列表（可配置多个）
+}
+
+// UsageReporter 单个用量上报器配置
+type UsageReporter struct {
+	Name     string              `yaml:"name"`               // 上报器名称
+	Type     string              `yaml:"type"`               // 类型：webhook / database
+	Enabled  bool                `yaml:"enabled"`            // 是否启用
+	URL      string              `yaml:"url,omitempty"`      // Webhook URL
+	Timeout  time.Duration       `yaml:"timeout,omitempty"`  // 超时时间
+	Retry    int                 `yaml:"retry,omitempty"`    // 重试次数
+	Database *UsageDatabaseConfig `yaml:"database,omitempty"` // 数据库配置
+}
+
+// UsageHook 兼容旧配置（已废弃，请使用 UsageConfig）
+type UsageHook = UsageConfig
+
+// UsageDatabaseConfig 用量数据库配置
+type UsageDatabaseConfig struct {
+	Driver string `yaml:"driver"` // 驱动：mysql / postgres / sqlite
+	DSN    string `yaml:"dsn"`    // 数据源名称
+	Table  string `yaml:"table"`  // 表名，默认 usage_records
 }
 
 // HealthCheck 健康检查配置
@@ -202,9 +221,7 @@ func Load(path string) (*Config, error) {
 		cfg.Listen = ":8000"
 	}
 
-	if cfg.UsageHook != nil && cfg.UsageHook.Timeout == 0 {
-		cfg.UsageHook.Timeout = 1 * time.Second
-	}
+	// 用量上报配置默认值已在各 Reporter 中设置
 
 	if cfg.HealthCheck != nil {
 		if cfg.HealthCheck.Interval == 0 {

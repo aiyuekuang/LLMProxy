@@ -96,6 +96,22 @@ func main() {
 		log.Println("鉴权管道已启用")
 	}
 
+	// 初始化用量上报器（支持多个）
+	if cfg.UsageHook != nil && cfg.UsageHook.Enabled {
+		for _, reporter := range cfg.UsageHook.Reporters {
+			if reporter == nil || !reporter.Enabled {
+				continue
+			}
+			if reporter.Type == "database" && reporter.Database != nil {
+				if err := proxy.InitUsageDatabase(reporter.Name, reporter.Database); err != nil {
+					log.Fatalf("初始化用量数据库 [%s] 失败: %v", reporter.Name, err)
+				}
+			} else if reporter.Type == "webhook" {
+				log.Printf("用量 Webhook [%s] 已配置: %s", reporter.Name, reporter.URL)
+			}
+		}
+	}
+
 	// 创建限流器（如果启用限流）
 	var limiter ratelimit.RateLimiter
 	if cfg.RateLimit != nil && cfg.RateLimit.Enabled {

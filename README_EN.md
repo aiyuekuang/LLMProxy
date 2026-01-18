@@ -33,6 +33,86 @@ High-performance gateway for LLM services, supporting seamless streaming/non-str
 - ✅ **Direct Database Write** - Support MySQL/PostgreSQL/SQLite direct write
 - ✅ **Independent Switches** - Each reporter can be enabled/disabled independently
 
+## Real-World Scenarios
+
+### Scenario 1: Self-Hosted OpenCode AI Coding Assistant (Private Code Assistant)
+
+A tech team deploys Qwen2.5-Coder-32B model using vLLM to provide developers with a private AI coding assistant.
+
+**Architecture:**
+```
+Developer IDE (OpenCode) → LLMProxy → vLLM (Qwen2.5-Coder-32B)
+```
+
+**LLMProxy Configuration:**
+```yaml
+backends:
+  - url: "http://vllm-coder:8000"
+    weight: 10
+
+auth:
+  enabled: true
+  storage: "file"
+  header_names: ["Authorization", "X-API-Key"]
+
+api_keys:
+  - key: "sk-llmproxy-dev-001"
+    name: "Dev Team"
+    total_quota: 1000000
+    allowed_ips: ["10.0.0.0/8"]
+
+rate_limit:
+  per_key:
+    requests_per_minute: 60
+    max_concurrent: 3
+```
+
+**vLLM Startup Command:**
+```bash
+python -m vllm.entrypoints.openai.api_server \
+  --model Qwen/Qwen2.5-Coder-32B-Instruct \
+  --enable-auto-tool-choice \
+  --tool-call-parser hermes \
+  --return-detailed-tokens \
+  --port 8000
+```
+
+**OpenCode Configuration (opencode.json):**
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "provider": {
+    "llmproxy": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "LLMProxy",
+      "options": {
+        "baseURL": "http://your-llmproxy-host:8000/v1"
+      },
+      "models": {
+        "qwen-coder": {
+          "name": "Qwen2.5-Coder-32B-Instruct",
+          "limit": {
+            "context": 131072,
+            "output": 8192
+          }
+        }
+      }
+    }
+  },
+  "model": "llmproxy/qwen-coder"
+}
+```
+
+**Results:**
+- Code data stays fully private within the intranet
+- Supports Tool Calling for file read/write and command execution
+- Unified API Key management and usage monitoring
+- Coding assistant response latency < 500ms
+
+For detailed configuration, see: [OpenCode Integration Guide](docs/opencode-integration.md)
+
+---
+
 ## Quick Start
 
 ### Option 1: Use Official Image (Recommended)

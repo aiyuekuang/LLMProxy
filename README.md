@@ -61,7 +61,85 @@ LLMProxy 专为 **自建推理服务**（vLLM、TGI、自研引擎）设计，�
 
 ## 真实使用场景
 
-### 场景 1：AI 客服系统（实时对话）
+### 场景 1：自建 OpenCode AI 编程助手（私有化代码助手）
+
+某技术团队使用 vLLM 部署 Qwen2.5-Coder-32B 模型，为开发者提供私有化的 AI 编程助手。
+
+**架构：**
+```
+开发者 IDE（OpenCode）→ LLMProxy → vLLM（Qwen2.5-Coder-32B）
+```
+
+**LLMProxy 配置：**
+```yaml
+backends:
+  - url: "http://vllm-coder:8000"
+    weight: 10
+
+auth:
+  enabled: true
+  storage: "file"
+  header_names: ["Authorization", "X-API-Key"]
+
+api_keys:
+  - key: "sk-llmproxy-dev-001"
+    name: "开发团队"
+    total_quota: 1000000
+    allowed_ips: ["10.0.0.0/8"]
+
+rate_limit:
+  per_key:
+    requests_per_minute: 60
+    max_concurrent: 3
+```
+
+**vLLM 启动命令：**
+```bash
+python -m vllm.entrypoints.openai.api_server \
+  --model Qwen/Qwen2.5-Coder-32B-Instruct \
+  --enable-auto-tool-choice \
+  --tool-call-parser hermes \
+  --return-detailed-tokens \
+  --port 8000
+```
+
+**OpenCode 配置（opencode.json）：**
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "provider": {
+    "llmproxy": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "LLMProxy",
+      "options": {
+        "baseURL": "http://your-llmproxy-host:8000/v1"
+      },
+      "models": {
+        "qwen-coder": {
+          "name": "Qwen2.5-Coder-32B-Instruct",
+          "limit": {
+            "context": 131072,
+            "output": 8192
+          }
+        }
+      }
+    }
+  },
+  "model": "llmproxy/qwen-coder"
+}
+```
+
+**效果：**
+- 代码数据完全私有化，不出内网
+- 支持 Tool Calling，可读写文件、执行命令
+- 统一的 API Key 管理和用量监控
+- 编程助手响应延迟 < 500ms
+
+详细配置请参考：[OpenCode 集成文档](docs/opencode-integration.md)
+
+---
+
+### 场景 2：AI 客服系统（实时对话）
 
 某电商公司使用 vLLM 部署了 Qwen-72B 模型，日均 10 万次对话。
 
@@ -100,7 +178,7 @@ rate_limit:
 
 ---
 
-### 场景 2：企业内部 AI 助手（私有化部署）
+### 场景 3：企业内部 AI 助手（私有化部署）
 
 某金融公司为 1000 名员工提供 AI 助手，使用 TGI 部署 Llama-3-70B。
 
@@ -140,7 +218,7 @@ rate_limit:
 
 ---
 
-### 场景 3：模型服务商（对外提供 API）
+### 场景 4：模型服务商（对外提供 API）
 
 某 AI 创业公司使用 vLLM 部署多个开源模型，对外提供推理 API。
 

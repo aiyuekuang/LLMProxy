@@ -10,7 +10,6 @@ import (
 	"syscall"
 	"time"
 
-	"llmproxy/internal/auth"
 	"llmproxy/internal/auth/pipeline"
 	"llmproxy/internal/config"
 	"llmproxy/internal/lb"
@@ -86,29 +85,15 @@ func main() {
 
 	// 创建鉴权管道执行器（如果启用鉴权）
 	var pipelineExecutor *pipeline.Executor
-	var keyStore auth.KeyStore // 兼容旧的 KeyStore 接口
 	
 	if cfg.Auth != nil && cfg.Auth.Enabled {
-		// 检查是否使用新的管道模式
-		if len(cfg.Auth.Pipeline) > 0 {
-			// 使用新的管道鉴权系统
-			pipelineCfg := pipeline.FromConfig(cfg.Auth)
-			var err error
-			pipelineExecutor, err = pipeline.NewExecutor(pipelineCfg, cfg.APIKeys)
-			if err != nil {
-				log.Fatalf("创建鉴权管道失败: %v", err)
-			}
-			log.Println("鉴权管道已启用")
-		} else {
-			// 兼容旧配置：使用 file 存储
-			keyStore = auth.NewFileKeyStore(cfg.APIKeys)
-			log.Printf("鉴权已启用: 文件存储, %d 个 API Keys", len(cfg.APIKeys))
-			if len(cfg.Auth.HeaderNames) > 0 {
-				log.Printf("自定义认证 Header: %v", cfg.Auth.HeaderNames)
-			} else {
-				log.Println("认证 Header: Authorization (Bearer), X-API-Key")
-			}
+		pipelineCfg := pipeline.FromConfig(cfg.Auth)
+		var err error
+		pipelineExecutor, err = pipeline.NewExecutor(pipelineCfg, cfg.APIKeys)
+		if err != nil {
+			log.Fatalf("创建鉴权管道失败: %v", err)
 		}
+		log.Println("鉴权管道已启用")
 	}
 
 	// 创建限流器（如果启用限流）
@@ -143,7 +128,7 @@ func main() {
 	log.Println("健康检查端点: /health")
 
 	// 创建代理处理器
-	proxyHandler := proxy.NewHandler(cfg, loadBalancer, router, keyStore, limiter)
+	proxyHandler := proxy.NewHandler(cfg, loadBalancer, router, nil, limiter)
 
 	// 应用中间件链
 	var handler http.HandlerFunc = proxyHandler
@@ -154,17 +139,8 @@ func main() {
 	}
 	
 	// 鉴权中间件
-	if cfg.Auth != nil && cfg.Auth.Enabled {
-		if pipelineExecutor != nil {
-			// 使用新的管道鉴权中间件
-			handler = pipeline.Middleware(pipelineExecutor, handler)
-		} else if keyStore != nil {
-			// 兼容旧的鉴权中间件
-			authConfig := &auth.MiddlewareConfig{
-				HeaderNames: cfg.Auth.HeaderNames,
-			}
-			handler = auth.MiddlewareWithConfig(keyStore, authConfig, handler)
-		}
+	if pipelineExecutor != nil {
+		handler = pipeline.Middleware(pipelineExecutor, handler)
 	}
 
 	// 注册代理处理器

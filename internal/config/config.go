@@ -55,11 +55,10 @@ type FallbackRule struct {
 // AuthConfig 鉴权配置
 type AuthConfig struct {
 	Enabled     bool              `yaml:"enabled"`      // 是否启用鉴权
-	Storage     string            `yaml:"storage"`      // 存储方式：file 或 redis（兼容旧配置）
-	Defaults    *DefaultConfig    `yaml:"defaults"`     // 默认配置
 	HeaderNames []string          `yaml:"header_names"` // 自定义认证 Header 名称列表
 	Mode        string            `yaml:"mode"`         // 管道模式：first_match 或 all
 	Pipeline    []*AuthProvider   `yaml:"pipeline"`     // 鉴权管道配置
+	Defaults    *DefaultConfig    `yaml:"defaults"`     // 默认配置（用于 file provider）
 }
 
 // AuthProvider 鉴权提供者配置
@@ -237,8 +236,8 @@ func Load(path string) (*Config, error) {
 
 	// 鉴权配置默认值
 	if cfg.Auth != nil && cfg.Auth.Enabled {
-		if cfg.Auth.Storage == "" {
-			cfg.Auth.Storage = "file"
+		if cfg.Auth.Mode == "" {
+			cfg.Auth.Mode = "first_match"
 		}
 	}
 

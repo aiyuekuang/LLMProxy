@@ -1,28 +1,100 @@
 # LLMProxy
 
-**自建 LLM 推理服务的高性能网关** - 为 vLLM、TGI、自研推理引擎而生
-
-中文文档 | [English](README_EN.md)
+大模型网关，专为 vLLM、TGI、Ollama、自研推理引擎设计，提供 Token 计量、鉴权、负载均衡。
 
 [![Docker Build](https://github.com/aiyuekuang/LLMProxy/actions/workflows/release.yml/badge.svg)](https://github.com/aiyuekuang/LLMProxy/actions/workflows/release.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Go Version](https://img.shields.io/github/go-mod/go-version/aiyuekuang/LLMProxy)](go.mod)
-[![GitHub Stars](https://img.shields.io/github/stars/aiyuekuang/LLMProxy?style=social)](https://github.com/aiyuekuang/LLMProxy/stargazers)
-[![GitHub Forks](https://img.shields.io/github/forks/aiyuekuang/LLMProxy?style=social)](https://github.com/aiyuekuang/LLMProxy/network/members)
 
-## 产品定位
+中文文档 | [English](README_EN.md)
 
-LLMProxy 专为 **自建推理服务**（vLLM、TGI、自研引擎）设计，不是云端 API 聚合平台。
+---
 
-**典型使用场景：**
-- 🏢 使用 vLLM/TGI 部署开源模型的团队
-- 🔒 私有化部署的企业（数据不出内网）
-- ⚡ 对性能要求极高的实时对话应用
-- 🎯 需要简单管理和监控的自建服务
+## 核心能力
 
-**不适用场景：**
-- ❌ 需要对接 OpenAI/Claude/Gemini 云端 API（请使用 LiteLLM/One-API）
-- ❌ 需要复杂多租户管理的企业平台
+| 功能 | 说明 |
+|------|------|
+| **Token 用量统计** | 自动统计 `prompt_tokens` + `completion_tokens`，支持多种存储方式 |
+| **请求日志记录** | 完整记录请求参数、响应数据、延迟、状态码等 |
+| **API Key 鉴权** | Key 验证、额度控制、IP 白名单、过期时间管理 |
+| **Lua 脚本扩展** | 生命周期钩子、自定义鉴权逻辑、请求/响应改写，支持 Lua 编程 |
+| **流式模式切换** | 同时支持 SSE 流式和 JSON 非流式响应，自动识别 |
+| **负载均衡** | 轮询、权重、最少连接数、延迟优先等多种策略 |
+| **零缓冲转发** | SSE 响应逐 token 直接转发，不增加首 token 延迟 |
+
+### 数据对接方式
+
+根据你的架构选择合适的对接方案：
+
+| 方案 | 适用场景 | 说明 |
+|------|----------|------|
+| **Webhook** | 已有计费/管理系统 | 异步 POST 到你的接口，完整透传请求和用量数据 |
+| **Redis** | 高并发、分布式部署 | 限流计数、Key 额度存储，支持集群模式 |
+| **配置文件** | 小规模、快速部署 | YAML 直接管理 API Key，无需外部依赖 |
+| **Prometheus** | 监控告警 | 暴露 `/metrics` 端点，对接 Grafana 可视化 |
+
+---
+
+## 典型场景
+
+### 对接 AI 编码助手
+
+为 [opencode](https://github.com/anomalyco/opencode)、Cursor、Aider 等 AI 编码工具提供统一的 API 网关：
+
+```
+opencode / Cursor / Aider → LLMProxy → vLLM / TGI / Ollama
+```
+
+- 统一管理多个 AI 工具的 API 调用
+- Token 用量统计和成本控制
+- 团队成员的 API Key 分发和额度管理
+
+### 私有化 LLM 服务
+
+为企业内部提供统一的大模型入口：
+
+- 对接 vLLM、TGI、Ollama 等推理服务
+- API Key 鉴权和 IP 白名单
+- 负载均衡和故障转移
+
+---
+
+## 独特设计
+
+### 1. 零缓冲流式传输
+- 使用 `io.Copy` 实现内核级 splice，SSE 响应逐 token 直接转发
+- 不缓冲响应体，不增加首 token 延迟（TTFT）
+
+### 2. 零性能侵入
+- 主请求路径不解析 JSON 响应体
+- 用量统计通过异步 goroutine 在请求结束后上报
+
+### 3. 完全透传设计
+- 不关心业务参数（如 `model`），所有请求参数原样透传到后端
+- 业务逻辑（权限控制、模型映射、计费）由 Webhook 接收方处理
+
+### 4. 单二进制部署
+- 无需 Redis/MySQL 等外部依赖
+- API Key 和配置通过 YAML 文件管理
+
+---
+
+## 快速开始
+
+```bash
+# 下载配置文件
+curl -o config.yaml https://raw.githubusercontent.com/aiyuekuang/LLMProxy/main/config.yaml.example
+
+# 修改后端地址
+vim config.yaml
+
+# 启动
+docker run -d -p 8000:8000 -v $(pwd)/config.yaml:/home/llmproxy/config.yaml ghcr.io/aiyuekuang/llmproxy:latest
+```
+
+访问 `http://localhost:8000/v1/chat/completions` 即可使用。
+
+---
 
 ## 核心特性
 
@@ -179,54 +251,33 @@ rate_limit:
 
 ---
 
-## 快速开始
+## 更多安装方式
 
-### 方式一：使用官方镜像（推荐）
+除了上面的 Docker 快速开始，还支持以下方式：
 
-```bash
-# 1. 创建配置文件
-curl -o config.yaml https://raw.githubusercontent.com/aiyuekuang/LLMProxy/main/config.yaml.example
-
-# 2. 编辑配置文件，修改后端地址
-vim config.yaml
-
-# 3. 运行容器
-docker run -d \
-  --name llmproxy \
-  -p 8000:8000 \
-  -v $(pwd)/config.yaml:/home/llmproxy/config.yaml \
-  ghcr.io/aiyuekuang/llmproxy:latest
-```
-
-**支持架构：** `linux/amd64`, `linux/arm64`
-
-### 方式二：本地构建
+<details>
+<summary><b>🔧 本地构建</b></summary>
 
 ```bash
-# 下载依赖
 go mod download
-
-# 复制配置文件
 cp config.yaml.example config.yaml
-
-# 编辑配置文件，修改后端地址
-vim config.yaml
-
-# 运行
+vim config.yaml  # 修改后端地址
 go run cmd/main.go --config config.yaml
 ```
+</details>
 
-### 方式三：Docker Compose（含 vLLM）
+<details>
+<summary><b>🐳 Docker Compose（含监控）</b></summary>
 
 ```bash
 cd deployments
 docker compose up -d
 ```
 
-访问：
-- LLMProxy: http://localhost:8000
-- Prometheus: http://localhost:9090
-- Grafana: http://localhost:3000 (admin/admin)
+访问：LLMProxy `:8000` | Prometheus `:9090` | Grafana `:3000` (admin/admin)
+</details>
+
+**支持架构**：`linux/amd64`, `linux/arm64`
 
 ## 配置说明
 

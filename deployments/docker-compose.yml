@@ -1,30 +1,6 @@
 version: '3.8'
 
 services:
-  # vLLM 后端服务（示例）
-  vllm:
-    image: vllm/vllm-openai:latest
-    command:
-      - --model
-      - meta-llama/Llama-3-8b-Instruct
-      - --return-detailed-tokens  # 关键：启用 usage 返回
-      - --port
-      - "8000"
-    ports:
-      - "8000:8000"
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-
   # LLMProxy 服务
   llmproxy:
     build:
@@ -33,9 +9,8 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - ./config.yaml:/etc/llmproxy/config.yaml
-    depends_on:
-      - vllm
+      - ./config.yaml:/home/llmproxy/config.yaml
+    command: ["/home/llmproxy/llmproxy", "-config", "/home/llmproxy/config.yaml"]
     environment:
       - TZ=Asia/Shanghai
     healthcheck:
@@ -54,8 +29,6 @@ services:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
-    depends_on:
-      - llmproxy
 
   # Grafana（可选，用于可视化）
   grafana:
@@ -66,8 +39,6 @@ services:
       - GF_SECURITY_ADMIN_PASSWORD=admin
     volumes:
       - grafana-storage:/var/lib/grafana
-    depends_on:
-      - prometheus
 
 volumes:
   grafana-storage:

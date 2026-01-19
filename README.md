@@ -1,6 +1,8 @@
 # LLMProxy
 
-大模型网关，专为 vLLM、TGI、Ollama、自研推理引擎设计，提供 Token 计量、鉴权、负载均衡。
+**LLM 推理服务的高性能反向代理** —— 如同 nginx 之于 Web 服务，LLMProxy 之于大模型推理引擎。
+
+**单二进制** | **零缓冲** | **毫秒级 TTFT** | **开箱即用**
 
 [![Docker Build](https://github.com/aiyuekuang/LLMProxy/actions/workflows/release.yml/badge.svg)](https://github.com/aiyuekuang/LLMProxy/actions/workflows/release.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -10,21 +12,69 @@
 
 ---
 
-## 核心能力
+## 为什么选择 LLMProxy？
+
+| 对比项 | 直连推理服务 | API 网关（Kong/APISIX） | LLMProxy |
+|--------|-------------|------------------------|----------|
+| SSE 流式延迟 | ✅ 最优 | ❌ 缓冲导致延迟 | ✅ 零缓冲转发 |
+| Token 用量计量 | ❌ 需自研 | ❌ 需插件开发 | ✅ 原生支持 |
+| 部署复杂度 | 低 | 高（需数据库） | 低（单二进制） |
+| LLM 场景优化 | 无 | 通用网关 | ✅ 专为 LLM 设计 |
+| 多后端负载均衡 | ❌ 不支持 | ✅ 支持 | ✅ 支持 |
+| Lua 脚本扩展 | ❌ 不支持 | ✅ 支持 | ✅ 支持 |
+
+---
+
+## 快速开始
+
+**30 秒启动：**
+
+```bash
+# 下载配置文件
+curl -o config.yaml https://raw.githubusercontent.com/aiyuekuang/LLMProxy/main/config.yaml.example
+
+# 修改后端地址
+vim config.yaml
+
+# 启动
+docker run -d -p 8000:8000 -v $(pwd)/config.yaml:/home/llmproxy/config.yaml ghcr.io/aiyuekuang/llmproxy:latest
+```
+
+访问 `http://localhost:8000/v1/chat/completions` 即可使用。
+
+<details>
+<summary><b>🔧 更多安装方式</b></summary>
+
+**本地构建：**
+```bash
+go mod download && cp config.yaml.example config.yaml
+go run cmd/main.go --config config.yaml
+```
+
+**Docker Compose（含监控）：**
+```bash
+cd deployments && docker compose up -d
+```
+访问：LLMProxy `:8000` | Prometheus `:9090` | Grafana `:3000` (admin/admin)
+
+</details>
+
+**支持架构**：`linux/amd64`, `linux/arm64`
+
+---
+
+## 核心特性
 
 | 功能 | 说明 |
 |------|------|
-| **Token 用量统计** | 自动统计 `prompt_tokens` + `completion_tokens`，支持多种存储方式 |
-| **请求日志记录** | 完整记录请求参数、响应数据、延迟、状态码等 |
-| **API Key 鉴权** | Key 验证、额度控制、IP 白名单、过期时间管理 |
-| **Lua 脚本扩展** | 生命周期钩子、自定义鉴权逻辑、请求/响应改写，支持 Lua 编程 |
-| **流式模式切换** | 同时支持 SSE 流式和 JSON 非流式响应，自动识别 |
+| **零缓冲流式传输** | SSE 响应逐 token 直接转发，不增加首 token 延迟（TTFT） |
+| **Token 用量统计** | 自动统计 `prompt_tokens` + `completion_tokens`，支持 Webhook/Redis/数据库 |
+| **API Key 鉴权** | Key 验证、额度控制、IP 白名单、过期时间、Lua 自定义逻辑 |
 | **负载均衡** | 轮询、权重、最少连接数、延迟优先等多种策略 |
-| **零缓冲转发** | SSE 响应逐 token 直接转发，不增加首 token 延迟 |
+| **限流保护** | 全局/Key 级限流、并发控制、令牌桶算法 |
+| **单二进制部署** | 无需 Redis/MySQL 等外部依赖，YAML 配置即可运行 |
 
 ### 数据对接方式
-
-根据你的架构选择合适的对接方案：
 
 | 方案 | 适用场景 | 说明 |
 |------|----------|------|
@@ -32,6 +82,21 @@
 | **Redis** | 高并发、分布式部署 | 限流计数、Key 额度存储，支持集群模式 |
 | **配置文件** | 小规模、快速部署 | YAML 直接管理 API Key，无需外部依赖 |
 | **Prometheus** | 监控告警 | 暴露 `/metrics` 端点，对接 Grafana 可视化 |
+
+---
+
+## 性能
+
+| 指标 | 数值 |
+|------|------|
+| 首 Token 延迟开销 | < 1ms |
+| 内存占用 | < 50MB |
+| 并发连接 | 10,000+ |
+
+**设计原则：**
+- **零缓冲** - 使用 `io.Copy` 实现内核级 splice，SSE 响应逐 token 直接转发
+- **零侵入** - 主请求路径不解析 JSON 响应体，用量统计异步上报
+- **完全透传** - 不关心业务参数（如 `model`），所有请求参数原样透传
 
 ---
 
@@ -56,80 +121,6 @@ opencode / Cursor / Aider → LLMProxy → vLLM / TGI / Ollama
 - 对接 vLLM、TGI、Ollama 等推理服务
 - API Key 鉴权和 IP 白名单
 - 负载均衡和故障转移
-
----
-
-## 独特设计
-
-### 1. 零缓冲流式传输
-- 使用 `io.Copy` 实现内核级 splice，SSE 响应逐 token 直接转发
-- 不缓冲响应体，不增加首 token 延迟（TTFT）
-
-### 2. 零性能侵入
-- 主请求路径不解析 JSON 响应体
-- 用量统计通过异步 goroutine 在请求结束后上报
-
-### 3. 完全透传设计
-- 不关心业务参数（如 `model`），所有请求参数原样透传到后端
-- 业务逻辑（权限控制、模型映射、计费）由 Webhook 接收方处理
-
-### 4. 单二进制部署
-- 无需 Redis/MySQL 等外部依赖
-- API Key 和配置通过 YAML 文件管理
-
----
-
-## 快速开始
-
-```bash
-# 下载配置文件
-curl -o config.yaml https://raw.githubusercontent.com/aiyuekuang/LLMProxy/main/config.yaml.example
-
-# 修改后端地址
-vim config.yaml
-
-# 启动
-docker run -d -p 8000:8000 -v $(pwd)/config.yaml:/home/llmproxy/config.yaml ghcr.io/aiyuekuang/llmproxy:latest
-```
-
-访问 `http://localhost:8000/v1/chat/completions` 即可使用。
-
----
-
-## 核心特性
-
-### 🚀 极致性能
-- ✅ **零缓冲流式传输** - SSE 响应逐 token 转发，不增加首 token 延迟（TTFT）
-- ✅ **零性能侵入** - 主请求路径不解析响应体、不连接数据库、不调用外部服务
-- ✅ **连接复用** - HTTP 客户端复用连接，减少握手开销
-
-### 🎯 透明代理
-- ✅ **完全透传** - 不关心业务参数（如 model），完全透传所有请求参数到后端
-- ✅ **自动重试** - 指数退避策略，网络抖动自动重试
-- ✅ **多种负载均衡** - 轮询、最少连接数、延迟优先
-- ✅ **灵活路由** - 支持通过 Webhook 实现自定义路由逻辑
-
-### 🔐 可编排鉴权管道 (v0.3.0 新增)
-- ✅ **多数据源支持** - 配置文件 / Redis / 数据库（MySQL/PostgreSQL/SQLite）/ Webhook
-- ✅ **Lua 脚本决策** - 自定义鉴权逻辑，灵活控制放行/拒绝
-- ✅ **可编排顺序** - 自由调整 Provider 执行顺序
-- ✅ **两种管道模式** - `first_match`（首个成功即放行）或 `all`（全部通过）
-- ✅ **自定义认证 Header** - 支持配置任意 Header 名称
-- ✅ **IP 白名单** - 防止未授权访问
-- ✅ **额度管理** - Token 配额、自动重置（按天/周/月）
-
-### 🛡️ 限流保护
-- ✅ **全局限流** - 保护推理服务不被打垮
-- ✅ **Key 级限流** - 防止单个用户滥用
-- ✅ **并发控制** - 限制最大并发请求数
-- ✅ **令牌桶算法** - 支持突发流量
-
-### 📊 监控计量
-- ✅ **完整请求透传** - Webhook 接收完整的请求参数和响应数据
-- ✅ **异步用量计量** - 请求结束后，后台异步上报 `prompt_tokens` + `completion_tokens`
-- ✅ **Prometheus 指标** - 请求量、延迟、错误率等
-- ✅ **Grafana 面板** - 预配置监控面板
-- ✅ **灵活扩展** - 通过 Webhook 实现自定义业务逻辑（权限控制、模型映射、计费等）
 
 ## 真实使用场景
 
@@ -331,34 +322,6 @@ rate_limit:
 详细场景说明请参考：[真实使用场景文档](docs/real-world-scenarios.md)
 
 ---
-
-## 更多安装方式
-
-除了上面的 Docker 快速开始，还支持以下方式：
-
-<details>
-<summary><b>🔧 本地构建</b></summary>
-
-```bash
-go mod download
-cp config.yaml.example config.yaml
-vim config.yaml  # 修改后端地址
-go run cmd/main.go --config config.yaml
-```
-</details>
-
-<details>
-<summary><b>🐳 Docker Compose（含监控）</b></summary>
-
-```bash
-cd deployments
-docker compose up -d
-```
-
-访问：LLMProxy `:8000` | Prometheus `:9090` | Grafana `:3000` (admin/admin)
-</details>
-
-**支持架构**：`linux/amd64`, `linux/arm64`
 
 ## 配置说明
 
@@ -634,13 +597,6 @@ curl http://localhost:8000/v1/chat/completions \
 |   + usage        |     |   + usage        |
 +------------------+     +------------------+
 ```
-
-## 性能特点
-
-- **零缓冲流式传输**：使用 `io.Copy` 实现内核级 splice，CPU 开销极低
-- **异步用量上报**：在 goroutine 中执行，不阻塞主请求
-- **连接复用**：HTTP 客户端复用连接，减少握手开销
-- **健康检查**：自动摘除不健康节点，提高可用性
 
 ## 项目结构
 

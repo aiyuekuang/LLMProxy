@@ -1,37 +1,104 @@
 # LLMProxy
 
-High-performance gateway for LLM services, supporting seamless streaming/non-streaming proxy with asynchronous usage metering via HTTP Webhook.
+**High-performance reverse proxy for LLM inference services** — Like nginx for web servers, LLMProxy for LLM inference engines.
+
+**Single Binary** | **Zero Buffer** | **Millisecond TTFT** | **Ready to Use**
 
 [![Docker Build](https://github.com/aiyuekuang/LLMProxy/actions/workflows/release.yml/badge.svg)](https://github.com/aiyuekuang/LLMProxy/actions/workflows/release.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Go Version](https://img.shields.io/github/go-mod/go-version/aiyuekuang/LLMProxy)](go.mod)
-[![GitHub Stars](https://img.shields.io/github/stars/aiyuekuang/LLMProxy?style=social)](https://github.com/aiyuekuang/LLMProxy/stargazers)
-[![GitHub Forks](https://img.shields.io/github/forks/aiyuekuang/LLMProxy?style=social)](https://github.com/aiyuekuang/LLMProxy/network/members)
 
 [中文文档](README.md) | English
 
+---
+
+## Why LLMProxy?
+
+| Comparison | Direct Connection | API Gateway (Kong/APISIX) | LLMProxy |
+|------------|-------------------|---------------------------|----------|
+| SSE Streaming Latency | ✅ Optimal | ❌ Buffer causes delay | ✅ Zero-buffer forwarding |
+| Token Usage Metering | ❌ Build yourself | ❌ Plugin required | ✅ Native support |
+| Deployment Complexity | Low | High (requires database) | Low (single binary) |
+| LLM Optimization | None | General gateway | ✅ Built for LLM |
+| Multi-backend Load Balancing | ❌ Not supported | ✅ Supported | ✅ Supported |
+| Lua Script Extension | ❌ Not supported | ✅ Supported | ✅ Supported |
+
+---
+
+## Quick Start
+
+**Start in 30 seconds:**
+
+```bash
+# Download config file
+curl -o config.yaml https://raw.githubusercontent.com/aiyuekuang/LLMProxy/main/config.yaml.example
+
+# Edit backend address
+vim config.yaml
+
+# Start
+docker run -d -p 8000:8000 -v $(pwd)/config.yaml:/home/llmproxy/config.yaml ghcr.io/aiyuekuang/llmproxy:latest
+```
+
+Access `http://localhost:8000/v1/chat/completions` to use.
+
+<details>
+<summary><b>🔧 More Installation Options</b></summary>
+
+**Build Locally:**
+```bash
+go mod download && cp config.yaml.example config.yaml
+go run cmd/main.go --config config.yaml
+```
+
+**Docker Compose (with monitoring):**
+```bash
+cd deployments && docker compose up -d
+```
+Access: LLMProxy `:8000` | Prometheus `:9090` | Grafana `:3000` (admin/admin)
+
+</details>
+
+**Supported Architectures**: `linux/amd64`, `linux/arm64`
+
+---
+
 ## Core Features
 
-### 🚀 High Performance
-- ✅ **Zero-Buffer Streaming** - SSE responses forwarded token-by-token without increasing TTFT
-- ✅ **Zero Performance Overhead** - Main request path doesn't parse response body
-- ✅ **Connection Reuse** - HTTP client connection pooling
+| Feature | Description |
+|---------|-------------|
+| **Zero-Buffer Streaming** | SSE responses forwarded token-by-token, no TTFT increase |
+| **Token Usage Statistics** | Auto-count `prompt_tokens` + `completion_tokens`, supports Webhook/Redis/Database |
+| **API Key Auth** | Key validation, quota control, IP whitelist, expiration, Lua custom logic |
+| **Load Balancing** | Round-robin, weighted, least connections, latency-based strategies |
+| **Rate Limiting** | Global/Key-level rate limiting, concurrency control, token bucket algorithm |
+| **Single Binary Deployment** | No Redis/MySQL dependencies, just YAML config |
 
-### 🎯 Transparent Proxy
-- ✅ **Full Passthrough** - Doesn't parse business parameters, fully transparent
-- ✅ **Auto Retry** - Exponential backoff strategy
-- ✅ **Multiple Load Balancing** - Round-robin, least connections, latency-based
+### Data Integration Options
 
-### 🔐 Orchestrable Auth Pipeline (v0.3.0+)
-- ✅ **Multiple Data Sources** - Config file / Redis / Database (MySQL/PostgreSQL/SQLite) / Webhook
-- ✅ **Lua Script Decision** - Custom auth logic with Lua scripts
-- ✅ **Orchestrable Order** - Freely adjust Provider execution order
-- ✅ **Two Pipeline Modes** - `first_match` (first success passes) or `all` (all must pass)
+| Option | Use Case | Description |
+|--------|----------|-------------|
+| **Webhook** | Existing billing/management system | Async POST to your endpoint with full request and usage data |
+| **Redis** | High concurrency, distributed deployment | Rate limiting counters, Key quota storage, cluster mode support |
+| **Config File** | Small scale, quick deployment | YAML manages API Keys directly, no external dependencies |
+| **Prometheus** | Monitoring & alerting | Exposes `/metrics` endpoint, integrates with Grafana |
 
-### 📊 Usage Reporting (v0.3.2+)
-- ✅ **Multiple Reporters** - Configure multiple Webhook and Database reporters simultaneously
-- ✅ **Direct Database Write** - Support MySQL/PostgreSQL/SQLite direct write
-- ✅ **Independent Switches** - Each reporter can be enabled/disabled independently
+---
+
+## Performance
+
+| Metric | Value |
+|--------|-------|
+| First Token Latency Overhead | < 1ms |
+| Memory Usage | < 50MB |
+| Concurrent Connections | 10,000+ |
+
+**Design Principles:**
+- **Zero Buffer** - Uses `io.Copy` for kernel-level splice, SSE responses forwarded token-by-token
+- **Zero Intrusion** - Main request path doesn't parse JSON response body, usage stats reported async
+- **Full Passthrough** - Doesn't care about business params (like `model`), all request params passed through
+
+---
 
 ## Real-World Scenarios
 
@@ -112,55 +179,6 @@ python -m vllm.entrypoints.openai.api_server \
 For detailed configuration, see: [OpenCode Integration Guide](docs/opencode-integration.md)
 
 ---
-
-## Quick Start
-
-### Option 1: Use Official Image (Recommended)
-
-```bash
-# 1. Create config file
-curl -o config.yaml https://raw.githubusercontent.com/aiyuekuang/LLMProxy/main/config.yaml.example
-
-# 2. Edit config file, modify backend addresses
-vim config.yaml
-
-# 3. Run container
-docker run -d \
-  --name llmproxy \
-  -p 8000:8000 \
-  -v $(pwd)/config.yaml:/home/llmproxy/config.yaml \
-  ghcr.io/aiyuekuang/llmproxy:latest
-```
-
-**Supported Architectures:** `linux/amd64`, `linux/arm64`
-
-### Option 2: Build Locally
-
-```bash
-# Download dependencies
-go mod download
-
-# Copy config file
-cp config.yaml.example config.yaml
-
-# Edit config file
-vim config.yaml
-
-# Run
-go run cmd/main.go --config config.yaml
-```
-
-### Option 3: Docker Compose (with vLLM)
-
-```bash
-cd deployments
-docker compose up -d
-```
-
-Access:
-- LLMProxy: http://localhost:8000
-- Prometheus: http://localhost:9090
-- Grafana: http://localhost:3000 (admin/admin)
 
 ## Configuration
 
@@ -319,13 +337,6 @@ curl http://localhost:8000/v1/chat/completions \
 |   + usage        |     |   + usage        |
 +------------------+     +------------------+
 ```
-
-## Performance Characteristics
-
-- **Zero-Buffer Streaming**: Uses `io.Copy` for kernel-level splice, minimal CPU overhead
-- **Async Usage Reporting**: Executed in goroutines, doesn't block main request
-- **Connection Reuse**: HTTP client reuses connections, reduces handshake overhead
-- **Health Checks**: Automatically removes unhealthy nodes, improves availability
 
 ## Project Structure
 

@@ -30,6 +30,47 @@ func ExtractAPIKey(authHeader, apiKeyHeader string) string {
 	return ""
 }
 
+// ExtractAPIKeyFromHeaders 从请求 Header 中提取 API Key（支持自定义 Header）
+// 按照 headerNames 的顺序依次尝试提取，找到第一个非空值即返回
+// 参数：
+//   - headers: HTTP 请求头
+//   - headerNames: 自定义 Header 名称列表，为空时使用默认值 ["Authorization", "X-API-Key"]
+// 返回：
+//   - string: API Key
+func ExtractAPIKeyFromHeaders(headers map[string][]string, headerNames []string) string {
+	// 使用默认 Header 名称
+	if len(headerNames) == 0 {
+		headerNames = []string{"Authorization", "X-API-Key"}
+	}
+	
+	// 按顺序尝试提取
+	for _, name := range headerNames {
+		values, ok := headers[name]
+		if !ok || len(values) == 0 {
+			continue
+		}
+		
+		value := values[0]
+		if value == "" {
+			continue
+		}
+		
+		// Authorization Header 特殊处理：提取 Bearer token
+		if name == "Authorization" {
+			if strings.HasPrefix(value, "Bearer ") {
+				return strings.TrimPrefix(value, "Bearer ")
+			}
+			// 如果不是 Bearer 格式，继续尝试下一个 Header
+			continue
+		}
+		
+		// 其他 Header 直接返回值
+		return value
+	}
+	
+	return ""
+}
+
 // GetClientIP 获取客户端 IP
 // 参数：
 //   - xForwardedFor: X-Forwarded-For Header 值

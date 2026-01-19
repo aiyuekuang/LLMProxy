@@ -150,8 +150,8 @@ func NewHandler(cfg *config.Config, loadBalancer lb.LoadBalancer, router *routin
 					}
 				}
 				
-				// 发送 Webhook
-				SendUsageWebhook(cfg.UsageHook, usage)
+				// 发送用量数据（Webhook 或数据库）
+				SendUsage(cfg.UsageHook, usage)
 			}
 		}()
 	}

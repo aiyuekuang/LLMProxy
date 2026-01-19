@@ -147,16 +147,38 @@ func collectUsage(reqBody []byte, respBody []byte, isStream bool, backendURL, en
 	}
 }
 
-// SendUsageWebhook 发送用量数据到 Webhook
+// SendUsage 发送用量数据到所有配置的上报器
 // 参数：
-//   - hook: Webhook 配置
+//   - cfg: 用量上报配置
 //   - usage: 用量记录
-func SendUsageWebhook(hook *config.UsageHook, usage *UsageRecord) {
-	if hook == nil || !hook.Enabled {
+func SendUsage(cfg *config.UsageConfig, usage *UsageRecord) {
+	if cfg == nil || !cfg.Enabled || usage == nil {
 		return
 	}
 
-	if usage == nil {
+	// 遍历所有上报器
+	for _, reporter := range cfg.Reporters {
+		if reporter == nil || !reporter.Enabled {
+			continue
+		}
+
+		switch reporter.Type {
+		case "database":
+			SendUsageToDatabaseByName(reporter.Name, usage)
+		case "webhook":
+			sendUsageToWebhook(reporter, usage)
+		default:
+			log.Printf("未知的用量上报类型: %s", reporter.Type)
+		}
+	}
+}
+
+// sendUsageToWebhook 发送用量数据到 Webhook
+// 参数：
+//   - reporter: 上报器配置
+//   - usage: 用量记录
+func sendUsageToWebhook(reporter *config.UsageReporter, usage *UsageRecord) {
+	if reporter == nil || !reporter.Enabled || usage == nil {
 		return
 	}
 
@@ -169,39 +191,44 @@ func SendUsageWebhook(hook *config.UsageHook, usage *UsageRecord) {
 	}
 
 	// 发送 Webhook（支持重试）
-	maxRetries := hook.Retry
+	maxRetries := reporter.Retry
 	if maxRetries <= 0 {
 		maxRetries = 1
 	}
 
+	timeout := reporter.Timeout
+	if timeout == 0 {
+		timeout = 3 * time.Second
+	}
+
 	for attempt := 0; attempt < maxRetries; attempt++ {
 		if attempt > 0 {
-			log.Printf("Webhook 重试 %d/%d", attempt+1, maxRetries)
-			time.Sleep(time.Duration(attempt) * 100 * time.Millisecond) // 指数退避
+			log.Printf("[%s] Webhook 重试 %d/%d", reporter.Name, attempt+1, maxRetries)
+			time.Sleep(time.Duration(attempt) * 100 * time.Millisecond)
 		}
 
-		if sendWebhookOnce(hook, data) {
+		if sendWebhookOnce(reporter.URL, timeout, data) {
 			metrics.RecordWebhookSuccess()
 			return
 		}
 	}
 
-	// 所有重试都失败
-	log.Printf("Webhook 发送失败，已重试 %d 次", maxRetries)
+	log.Printf("[%s] Webhook 发送失败，已重试 %d 次", reporter.Name, maxRetries)
 	metrics.RecordWebhookFailure()
 }
 
 // sendWebhookOnce 发送一次 Webhook 请求
 // 参数：
-//   - hook: Webhook 配置
+//   - url: Webhook URL
+//   - timeout: 超时时间
 //   - data: 请求体数据
 // 返回：
 //   - bool: 是否成功
-func sendWebhookOnce(hook *config.UsageHook, data []byte) bool {
-	ctx, cancel := context.WithTimeout(context.Background(), hook.Timeout)
+func sendWebhookOnce(url string, timeout time.Duration, data []byte) bool {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(ctx, "POST", hook.URL, bytes.NewReader(data))
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(data))
 	if err != nil {
 		log.Printf("创建 Webhook 请求失败: %v", err)
 		return false
@@ -209,7 +236,7 @@ func sendWebhookOnce(hook *config.UsageHook, data []byte) bool {
 
 	req.Header.Set("Content-Type", "application/json")
 
-	client := &http.Client{Timeout: hook.Timeout}
+	client := &http.Client{Timeout: timeout}
 	resp, err := client.Do(req)
 	if err != nil {
 		log.Printf("Webhook 请求失败: %v", err)

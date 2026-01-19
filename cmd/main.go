@@ -10,7 +10,7 @@ import (
 	"syscall"
 	"time"
 
-	"llmproxy/internal/auth"
+	"llmproxy/internal/auth/pipeline"
 	"llmproxy/internal/config"
 	"llmproxy/internal/lb"
 	"llmproxy/internal/metrics"
@@ -83,14 +83,32 @@ func main() {
 		}
 	}
 
-	// 创建 Key 存储（如果启用鉴权）
-	var keyStore auth.KeyStore
+	// 创建鉴权管道执行器（如果启用鉴权）
+	var pipelineExecutor *pipeline.Executor
+	
 	if cfg.Auth != nil && cfg.Auth.Enabled {
-		if cfg.Auth.Storage == "file" {
-			keyStore = auth.NewFileKeyStore(cfg.APIKeys)
-			log.Printf("鉴权已启用: 文件存储, %d 个 API Keys", len(cfg.APIKeys))
-		} else {
-			log.Printf("警告: 不支持的鉴权存储方式: %s, 鉴权功能未启用", cfg.Auth.Storage)
+		pipelineCfg := pipeline.FromConfig(cfg.Auth)
+		var err error
+		pipelineExecutor, err = pipeline.NewExecutor(pipelineCfg, cfg.APIKeys)
+		if err != nil {
+			log.Fatalf("创建鉴权管道失败: %v", err)
+		}
+		log.Println("鉴权管道已启用")
+	}
+
+	// 初始化用量上报器（支持多个）
+	if cfg.UsageHook != nil && cfg.UsageHook.Enabled {
+		for _, reporter := range cfg.UsageHook.Reporters {
+			if reporter == nil || !reporter.Enabled {
+				continue
+			}
+			if reporter.Type == "database" && reporter.Database != nil {
+				if err := proxy.InitUsageDatabase(reporter.Name, reporter.Database); err != nil {
+					log.Fatalf("初始化用量数据库 [%s] 失败: %v", reporter.Name, err)
+				}
+			} else if reporter.Type == "webhook" {
+				log.Printf("用量 Webhook [%s] 已配置: %s", reporter.Name, reporter.URL)
+			}
 		}
 	}
 
@@ -126,7 +144,7 @@ func main() {
 	log.Println("健康检查端点: /health")
 
 	// 创建代理处理器
-	proxyHandler := proxy.NewHandler(cfg, loadBalancer, router, keyStore, limiter)
+	proxyHandler := proxy.NewHandler(cfg, loadBalancer, router, nil, limiter)
 
 	// 应用中间件链
 	var handler http.HandlerFunc = proxyHandler
@@ -137,8 +155,8 @@ func main() {
 	}
 	
 	// 鉴权中间件
-	if keyStore != nil && cfg.Auth != nil && cfg.Auth.Enabled {
-		handler = auth.Middleware(keyStore, handler)
+	if pipelineExecutor != nil {
+		handler = pipeline.Middleware(pipelineExecutor, handler)
 	}
 
 	// 注册代理处理器

@@ -15,12 +15,31 @@ type Backend struct {
 	Models []string `yaml:"models"` // 支持的模型列表，空表示支持所有模型
 }
 
-// UsageHook 用量上报 Webhook 配置
-type UsageHook struct {
-	Enabled bool          `yaml:"enabled"` // 是否启用
-	URL     string        `yaml:"url"`     // Webhook URL
-	Timeout time.Duration `yaml:"timeout"` // 超时时间
-	Retry   int           `yaml:"retry"`   // 重试次数
+// UsageConfig 用量上报配置
+type UsageConfig struct {
+	Enabled   bool            `yaml:"enabled"`   // 是否启用
+	Reporters []*UsageReporter `yaml:"reporters"` // 上报器列表（可配置多个）
+}
+
+// UsageReporter 单个用量上报器配置
+type UsageReporter struct {
+	Name     string              `yaml:"name"`               // 上报器名称
+	Type     string              `yaml:"type"`               // 类型：webhook / database
+	Enabled  bool                `yaml:"enabled"`            // 是否启用
+	URL      string              `yaml:"url,omitempty"`      // Webhook URL
+	Timeout  time.Duration       `yaml:"timeout,omitempty"`  // 超时时间
+	Retry    int                 `yaml:"retry,omitempty"`    // 重试次数
+	Database *UsageDatabaseConfig `yaml:"database,omitempty"` // 数据库配置
+}
+
+// UsageHook 兼容旧配置（已废弃，请使用 UsageConfig）
+type UsageHook = UsageConfig
+
+// UsageDatabaseConfig 用量数据库配置
+type UsageDatabaseConfig struct {
+	Driver string `yaml:"driver"` // 驱动：mysql / postgres / sqlite
+	DSN    string `yaml:"dsn"`    // 数据源名称
+	Table  string `yaml:"table"`  // 表名，默认 usage_records
 }
 
 // HealthCheck 健康检查配置
@@ -54,9 +73,48 @@ type FallbackRule struct {
 
 // AuthConfig 鉴权配置
 type AuthConfig struct {
-	Enabled  bool          `yaml:"enabled"`
-	Storage  string        `yaml:"storage"`
-	Defaults *DefaultConfig `yaml:"defaults"`
+	Enabled     bool              `yaml:"enabled"`      // 是否启用鉴权
+	HeaderNames []string          `yaml:"header_names"` // 自定义认证 Header 名称列表
+	Mode        string            `yaml:"mode"`         // 管道模式：first_match 或 all
+	Pipeline    []*AuthProvider   `yaml:"pipeline"`     // 鉴权管道配置
+	Defaults    *DefaultConfig    `yaml:"defaults"`     // 默认配置（用于 file provider）
+}
+
+// AuthProvider 鉴权提供者配置
+type AuthProvider struct {
+	Name          string            `yaml:"name"`              // Provider 名称
+	Type          string            `yaml:"type"`              // Provider 类型：file / redis / database / webhook
+	Enabled       bool              `yaml:"enabled"`           // 是否启用
+	Redis         *RedisAuthConfig  `yaml:"redis,omitempty"`   // Redis 配置
+	Database      *DatabaseAuthConfig `yaml:"database,omitempty"` // 数据库配置
+	Webhook       *WebhookAuthConfig  `yaml:"webhook,omitempty"`  // Webhook 配置
+	LuaScript     string            `yaml:"lua_script"`        // Lua 脚本内容
+	LuaScriptFile string            `yaml:"lua_script_file"`   // Lua 脚本文件路径
+}
+
+// RedisAuthConfig Redis 鉴权配置
+type RedisAuthConfig struct {
+	Addr       string `yaml:"addr"`        // Redis 地址
+	Password   string `yaml:"password"`    // 密码
+	DB         int    `yaml:"db"`          // 数据库编号
+	KeyPattern string `yaml:"key_pattern"` // Key 模式，如 "llmproxy:key:{api_key}"
+}
+
+// DatabaseAuthConfig 数据库鉴权配置
+type DatabaseAuthConfig struct {
+	Driver    string   `yaml:"driver"`     // 驱动：mysql / postgres / sqlite
+	DSN       string   `yaml:"dsn"`        // 数据源名称
+	Table     string   `yaml:"table"`      // 表名
+	KeyColumn string   `yaml:"key_column"` // API Key 列名
+	Fields    []string `yaml:"fields"`     // 需要查询的字段列表
+}
+
+// WebhookAuthConfig Webhook 鉴权配置
+type WebhookAuthConfig struct {
+	URL     string            `yaml:"url"`     // Webhook URL
+	Method  string            `yaml:"method"`  // HTTP 方法，默认 POST
+	Timeout time.Duration     `yaml:"timeout"` // 超时时间
+	Headers map[string]string `yaml:"headers"` // 自定义请求头
 }
 
 // DefaultConfig 默认配置
@@ -163,9 +221,7 @@ func Load(path string) (*Config, error) {
 		cfg.Listen = ":8000"
 	}
 
-	if cfg.UsageHook != nil && cfg.UsageHook.Timeout == 0 {
-		cfg.UsageHook.Timeout = 1 * time.Second
-	}
+	// 用量上报配置默认值已在各 Reporter 中设置
 
 	if cfg.HealthCheck != nil {
 		if cfg.HealthCheck.Interval == 0 {
@@ -197,8 +253,8 @@ func Load(path string) (*Config, error) {
 
 	// 鉴权配置默认值
 	if cfg.Auth != nil && cfg.Auth.Enabled {
-		if cfg.Auth.Storage == "" {
-			cfg.Auth.Storage = "file"
+		if cfg.Auth.Mode == "" {
+			cfg.Auth.Mode = "first_match"
 		}
 	}
 

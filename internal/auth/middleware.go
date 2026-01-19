@@ -8,6 +8,11 @@ import (
 	"llmproxy/internal/utils"
 )
 
+// MiddlewareConfig 中间件配置
+type MiddlewareConfig struct {
+	HeaderNames []string // 自定义认证 Header 名称列表
+}
+
 // Middleware 鉴权中间件
 // 参数：
 //   - keyStore: Key 存储
@@ -15,9 +20,26 @@ import (
 // 返回：
 //   - http.HandlerFunc: HTTP 处理函数
 func Middleware(keyStore KeyStore, next http.HandlerFunc) http.HandlerFunc {
+	return MiddlewareWithConfig(keyStore, nil, next)
+}
+
+// MiddlewareWithConfig 带配置的鉴权中间件
+// 参数：
+//   - keyStore: Key 存储
+//   - config: 中间件配置（可选）
+//   - next: 下一个处理器
+// 返回：
+//   - http.HandlerFunc: HTTP 处理函数
+func MiddlewareWithConfig(keyStore KeyStore, config *MiddlewareConfig, next http.HandlerFunc) http.HandlerFunc {
+	// 获取 Header 名称列表
+	var headerNames []string
+	if config != nil && len(config.HeaderNames) > 0 {
+		headerNames = config.HeaderNames
+	}
+	
 	return func(w http.ResponseWriter, r *http.Request) {
-		// 1. 提取 API Key
-		apiKey := utils.ExtractAPIKey(r.Header.Get("Authorization"), r.Header.Get("X-API-Key"))
+		// 1. 提取 API Key（支持自定义 Header）
+		apiKey := utils.ExtractAPIKeyFromHeaders(r.Header, headerNames)
 		if apiKey == "" {
 			log.Println("鉴权失败: 缺少 API Key")
 			http.Error(w, `{"error":"Missing API Key"}`, http.StatusUnauthorized)

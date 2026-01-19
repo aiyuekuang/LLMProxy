@@ -109,11 +109,14 @@ docker run -d -p 8000:8000 -v $(pwd)/config.yaml:/home/llmproxy/config.yaml ghcr
 - ✅ **多种负载均衡** - 轮询、最少连接数、延迟优先
 - ✅ **灵活路由** - 支持通过 Webhook 实现自定义路由逻辑
 
-### 🔐 基础鉴权
-- ✅ **API Key 管理** - 简单的 Key 验证和额度控制
+### 🔐 可编排鉴权管道 (v0.3.0 新增)
+- ✅ **多数据源支持** - 配置文件 / Redis / 数据库（MySQL/PostgreSQL/SQLite）/ Webhook
+- ✅ **Lua 脚本决策** - 自定义鉴权逻辑，灵活控制放行/拒绝
+- ✅ **可编排顺序** - 自由调整 Provider 执行顺序
+- ✅ **两种管道模式** - `first_match`（首个成功即放行）或 `all`（全部通过）
+- ✅ **自定义认证 Header** - 支持配置任意 Header 名称
 - ✅ **IP 白名单** - 防止未授权访问
 - ✅ **额度管理** - Token 配额、自动重置（按天/周/月）
-- ✅ **配置文件存储** - 无需数据库，极简部署
 
 ### 🛡️ 限流保护
 - ✅ **全局限流** - 保护推理服务不被打垮
@@ -130,7 +133,85 @@ docker run -d -p 8000:8000 -v $(pwd)/config.yaml:/home/llmproxy/config.yaml ghcr
 
 ## 真实使用场景
 
-### 场景 1：AI 客服系统（实时对话）
+### 场景 1：自建 OpenCode AI 编程助手（私有化代码助手）
+
+某技术团队使用 vLLM 部署 Qwen2.5-Coder-32B 模型，为开发者提供私有化的 AI 编程助手。
+
+**架构：**
+```
+开发者 IDE（OpenCode）→ LLMProxy → vLLM（Qwen2.5-Coder-32B）
+```
+
+**LLMProxy 配置：**
+```yaml
+backends:
+  - url: "http://vllm-coder:8000"
+    weight: 10
+
+auth:
+  enabled: true
+  storage: "file"
+  header_names: ["Authorization", "X-API-Key"]
+
+api_keys:
+  - key: "sk-llmproxy-dev-001"
+    name: "开发团队"
+    total_quota: 1000000
+    allowed_ips: ["10.0.0.0/8"]
+
+rate_limit:
+  per_key:
+    requests_per_minute: 60
+    max_concurrent: 3
+```
+
+**vLLM 启动命令：**
+```bash
+python -m vllm.entrypoints.openai.api_server \
+  --model Qwen/Qwen2.5-Coder-32B-Instruct \
+  --enable-auto-tool-choice \
+  --tool-call-parser hermes \
+  --return-detailed-tokens \
+  --port 8000
+```
+
+**OpenCode 配置（opencode.json）：**
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "provider": {
+    "llmproxy": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "LLMProxy",
+      "options": {
+        "baseURL": "http://your-llmproxy-host:8000/v1"
+      },
+      "models": {
+        "qwen-coder": {
+          "name": "Qwen2.5-Coder-32B-Instruct",
+          "limit": {
+            "context": 131072,
+            "output": 8192
+          }
+        }
+      }
+    }
+  },
+  "model": "llmproxy/qwen-coder"
+}
+```
+
+**效果：**
+- 代码数据完全私有化，不出内网
+- 支持 Tool Calling，可读写文件、执行命令
+- 统一的 API Key 管理和用量监控
+- 编程助手响应延迟 < 500ms
+
+详细配置请参考：[OpenCode 集成文档](docs/opencode-integration.md)
+
+---
+
+### 场景 2：AI 客服系统（实时对话）
 
 某电商公司使用 vLLM 部署了 Qwen-72B 模型，日均 10 万次对话。
 
@@ -169,7 +250,7 @@ rate_limit:
 
 ---
 
-### 场景 2：企业内部 AI 助手（私有化部署）
+### 场景 3：企业内部 AI 助手（私有化部署）
 
 某金融公司为 1000 名员工提供 AI 助手，使用 TGI 部署 Llama-3-70B。
 
@@ -209,7 +290,7 @@ rate_limit:
 
 ---
 
-### 场景 3：模型服务商（对外提供 API）
+### 场景 4：模型服务商（对外提供 API）
 
 某 AI 创业公司使用 vLLM 部署多个开源模型，对外提供推理 API。
 
@@ -294,11 +375,21 @@ backends:
   - url: "http://tgi:8081"
     weight: 3
 
-# 用量上报 Webhook 配置
+# 用量上报配置（支持多上报器）
 usage_hook:
   enabled: true
-  url: "https://your-billing.com/llm-usage"
-  timeout: 1s
+  reporters:
+    - name: "billing"
+      type: "webhook"
+      enabled: true
+      url: "https://your-billing.com/llm-usage"
+      timeout: 3s
+    - name: "database"
+      type: "database"
+      enabled: true
+      database:
+        driver: "mysql"
+        dsn: "user:pass@tcp(localhost:3306)/llmproxy"
   retry: 2
 
 # 健康检查配置
@@ -323,19 +414,39 @@ routing:
   load_balance_strategy: "least_connections"  # round_robin, least_connections, latency_based
 ```
 
-### 鉴权配置
+### 鉴权配置（v0.3.0 管道模式）
 
 ```yaml
 auth:
   enabled: true
-  storage: "file"  # 或 "redis"
+  header_names: ["Authorization", "X-API-Key"]
+  mode: "first_match"  # first_match | all
   
-  # 默认配置
-  defaults:
-    quota_reset_period: "monthly"
-    total_quota: 1000000
+  pipeline:
+    # 1. Redis 验证（生产环境）
+    - name: "redis_auth"
+      type: "redis"
+      enabled: true
+      redis:
+        addr: "localhost:6379"
+        key_pattern: "llmproxy:key:{api_key}"
+      lua_script: |
+        if tonumber(data.balance or 0) <= 0 then
+          return {allow = false, message = "余额不足，请充值"}
+        end
+        return {allow = true}
+    
+    # 2. 配置文件验证（开发环境）
+    - name: "config_file"
+      type: "file"
+      enabled: true
+      lua_script: |
+        if data.status ~= "active" then
+          return {allow = false, message = "Key 已禁用"}
+        end
+        return {allow = true}
 
-# API Keys
+# API Keys（用于 file provider）
 api_keys:
   - key: "sk-llmproxy-test123"
     name: "测试 Key"
@@ -578,6 +689,16 @@ LLMProxy 会自动重试（根据配置的 `retry` 次数），失败仅记录�
 ### 4. 支持哪些负载均衡策略？
 
 当前支持加权轮询（Weighted Round Robin），后续可扩展最少连接等策略。
+
+## 文档
+
+| 文档 | 说明 |
+|------|------|
+| [鉴权管道详细文档](docs/auth-pipeline.md) | 多源鉴权管道配置、Lua 脚本示例 |
+| [开发文档](docs/development-guide.md) | 架构设计、核心模块、开发指南、API 参考 |
+| [OpenCode 集成](docs/opencode-integration.md) | 与 OpenCode 等 AI 编码助手集成 |
+| [Docker 发布指南](docs/docker-publish-guide.md) | Docker 镜像构建与发布 |
+| [更新日志](CHANGELOG.md) | 版本更新记录 |
 
 ## 许可证
 

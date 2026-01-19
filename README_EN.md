@@ -12,12 +12,106 @@ High-performance gateway for LLM services, supporting seamless streaming/non-str
 
 ## Core Features
 
-- ✅ **LLM Protocol-Aware Proxy** - Auto-detects `stream=true/false` in `/v1/chat/completions` requests
-- ✅ **Zero-Buffer Streaming** - SSE responses forwarded token-by-token without increasing TTFT (Time To First Token)
-- ✅ **Multi-Backend Load Balancing** - Supports vLLM, TGI, and other OpenAI-compatible backends
-- ✅ **Asynchronous Usage Metering** - Reports `prompt_tokens` + `completion_tokens` in background after request completion
-- ✅ **Zero Performance Overhead** - Main request path doesn't parse response body, connect to database, or call external services
-- ✅ **Simple Business Integration** - Push usage data to your billing system via HTTP Webhook
+### 🚀 High Performance
+- ✅ **Zero-Buffer Streaming** - SSE responses forwarded token-by-token without increasing TTFT
+- ✅ **Zero Performance Overhead** - Main request path doesn't parse response body
+- ✅ **Connection Reuse** - HTTP client connection pooling
+
+### 🎯 Transparent Proxy
+- ✅ **Full Passthrough** - Doesn't parse business parameters, fully transparent
+- ✅ **Auto Retry** - Exponential backoff strategy
+- ✅ **Multiple Load Balancing** - Round-robin, least connections, latency-based
+
+### 🔐 Orchestrable Auth Pipeline (v0.3.0+)
+- ✅ **Multiple Data Sources** - Config file / Redis / Database (MySQL/PostgreSQL/SQLite) / Webhook
+- ✅ **Lua Script Decision** - Custom auth logic with Lua scripts
+- ✅ **Orchestrable Order** - Freely adjust Provider execution order
+- ✅ **Two Pipeline Modes** - `first_match` (first success passes) or `all` (all must pass)
+
+### 📊 Usage Reporting (v0.3.2+)
+- ✅ **Multiple Reporters** - Configure multiple Webhook and Database reporters simultaneously
+- ✅ **Direct Database Write** - Support MySQL/PostgreSQL/SQLite direct write
+- ✅ **Independent Switches** - Each reporter can be enabled/disabled independently
+
+## Real-World Scenarios
+
+### Scenario 1: Self-Hosted OpenCode AI Coding Assistant (Private Code Assistant)
+
+A tech team deploys Qwen2.5-Coder-32B model using vLLM to provide developers with a private AI coding assistant.
+
+**Architecture:**
+```
+Developer IDE (OpenCode) → LLMProxy → vLLM (Qwen2.5-Coder-32B)
+```
+
+**LLMProxy Configuration:**
+```yaml
+backends:
+  - url: "http://vllm-coder:8000"
+    weight: 10
+
+auth:
+  enabled: true
+  storage: "file"
+  header_names: ["Authorization", "X-API-Key"]
+
+api_keys:
+  - key: "sk-llmproxy-dev-001"
+    name: "Dev Team"
+    total_quota: 1000000
+    allowed_ips: ["10.0.0.0/8"]
+
+rate_limit:
+  per_key:
+    requests_per_minute: 60
+    max_concurrent: 3
+```
+
+**vLLM Startup Command:**
+```bash
+python -m vllm.entrypoints.openai.api_server \
+  --model Qwen/Qwen2.5-Coder-32B-Instruct \
+  --enable-auto-tool-choice \
+  --tool-call-parser hermes \
+  --return-detailed-tokens \
+  --port 8000
+```
+
+**OpenCode Configuration (opencode.json):**
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "provider": {
+    "llmproxy": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "LLMProxy",
+      "options": {
+        "baseURL": "http://your-llmproxy-host:8000/v1"
+      },
+      "models": {
+        "qwen-coder": {
+          "name": "Qwen2.5-Coder-32B-Instruct",
+          "limit": {
+            "context": 131072,
+            "output": 8192
+          }
+        }
+      }
+    }
+  },
+  "model": "llmproxy/qwen-coder"
+}
+```
+
+**Results:**
+- Code data stays fully private within the intranet
+- Supports Tool Calling for file read/write and command execution
+- Unified API Key management and usage monitoring
+- Coding assistant response latency < 500ms
+
+For detailed configuration, see: [OpenCode Integration Guide](docs/opencode-integration.md)
+
+---
 
 ## Quick Start
 
@@ -81,12 +175,21 @@ backends:
   - url: "http://tgi:8081"
     weight: 3
 
-# Usage webhook configuration
+# Usage reporting (supports multiple reporters)
 usage_hook:
   enabled: true
-  url: "https://your-billing.com/llm-usage"
-  timeout: 1s
-  retry: 2
+  reporters:
+    - name: "billing"
+      type: "webhook"
+      enabled: true
+      url: "https://your-billing.com/llm-usage"
+      timeout: 3s
+    - name: "database"
+      type: "database"
+      enabled: true
+      database:
+        driver: "mysql"
+        dsn: "user:pass@tcp(localhost:3306)/llmproxy"
 
 # Health check configuration
 health_check:

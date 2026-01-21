@@ -22,16 +22,28 @@ routing:
 # 鉴权配置
 auth:
   enabled: true
-  storage: "file"
-
-# API Keys
-api_keys:
-  - key: "sk-llmproxy-test-123"
-    name: "测试 Key"
-    user_id: "test_user"
-    status: "active"
-    total_quota: 1000000
-    quota_reset_period: "daily"
+  mode: "first_match"
+  pipeline:
+    - name: "redis-admin"
+      type: "redis"
+      enabled: true
+      redis:
+        addr: "llmproxy-admin-redis:6379"
+        password: ""
+        db: 0
+        key_pattern: "llmproxy:key:{api_key}"
+      lua_script: |
+        -- 状态检查 (Admin 用 enabled, 这里转换)
+        if data.status ~= "enabled" and data.status ~= "active" then
+          return {allow = false, message = "API Key 已禁用"}
+        end
+        -- 额度检查 (-1 表示无限)
+        local quota = tonumber(data.quota) or -1
+        local used = tonumber(data.used) or 0
+        if quota > 0 and used >= quota then
+          return {allow = false, message = "额度已用尽"}
+        end
+        return {allow = true, metadata = {user_id = data.user_id}}
 
 # 限流配置
 rate_limit:

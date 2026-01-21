@@ -11,9 +11,9 @@ import (
 
 // BaseLoadBalancer 基础负载均衡器（提供通用功能）
 type BaseLoadBalancer struct {
-	backends    []*Backend          // 后端列表
-	healthCheck *config.HealthCheck // 健康检查配置
-	httpClient  *http.Client        // HTTP 客户端
+	backends    []*Backend               // 后端列表
+	healthCheck *config.HealthCheckConfig // 健康检查配置
+	httpClient  *http.Client             // HTTP 客户端
 }
 
 // NewBaseLoadBalancer 创建基础负载均衡器
@@ -22,7 +22,7 @@ type BaseLoadBalancer struct {
 //   - healthCheck: 健康检查配置
 // 返回：
 //   - *BaseLoadBalancer: 基础负载均衡器实例
-func NewBaseLoadBalancer(backends []config.Backend, healthCheck *config.HealthCheck) *BaseLoadBalancer {
+func NewBaseLoadBalancer(backends []*config.Backend, healthCheck *config.HealthCheckConfig) *BaseLoadBalancer {
 	base := &BaseLoadBalancer{
 		backends:    make([]*Backend, 0, len(backends)),
 		healthCheck: healthCheck,
@@ -33,6 +33,9 @@ func NewBaseLoadBalancer(backends []config.Backend, healthCheck *config.HealthCh
 
 	// 初始化后端列表
 	for _, b := range backends {
+		if b == nil {
+			continue
+		}
 		weight := b.Weight
 		if weight <= 0 {
 			weight = 1
@@ -41,7 +44,6 @@ func NewBaseLoadBalancer(backends []config.Backend, healthCheck *config.HealthCh
 			URL:     b.URL,
 			Weight:  weight,
 			Healthy: true,
-			Models:  b.Models,
 		})
 	}
 
@@ -100,14 +102,27 @@ func (b *BaseLoadBalancer) checkHealth(updateFunc func(*Backend, bool)) {
 // 返回：
 //   - bool: 是否健康
 func (b *BaseLoadBalancer) isHealthy(backend *Backend) bool {
-	url := backend.URL + b.healthCheck.Path
+	if b.healthCheck == nil {
+		return true
+	}
+	
+	path := b.healthCheck.Path
+	if path == "" {
+		path = "/health"
+	}
+	
+	url := backend.URL + path
 	resp, err := b.httpClient.Get(url)
 	if err != nil {
 		return false
 	}
 	defer resp.Body.Close()
 
-	return resp.StatusCode >= 200 && resp.StatusCode < 300
+	expectedStatus := b.healthCheck.ExpectedStatus
+	if expectedStatus == 0 {
+		return resp.StatusCode >= 200 && resp.StatusCode < 300
+	}
+	return resp.StatusCode == expectedStatus
 }
 
 // LogHealthChange 记录健康状态变化

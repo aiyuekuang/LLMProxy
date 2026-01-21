@@ -88,7 +88,7 @@ func calculateBackoff(attempt int, config *RetryConfig) time.Duration {
 // 返回：
 //   - error: 错误信息
 func retryRequest(config *RetryConfig, fn func() (int, error)) error {
-	if !config.Enabled {
+	if config == nil || !config.Enabled {
 		_, err := fn()
 		return err
 	}

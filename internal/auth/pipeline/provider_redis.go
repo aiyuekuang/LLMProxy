@@ -18,6 +18,17 @@ type RedisProvider struct {
 	keyPattern string        // Key 模式
 }
 
+// RedisConfig Redis 配置
+type RedisConfig struct {
+	Storage    string `yaml:"storage"`     // 引用 storage.caches[name]
+	KeyPattern string `yaml:"key_pattern"` // Key 模式
+	
+	// 兼容旧配置
+	Addr     string `yaml:"addr"`      // Redis 地址
+	Password string `yaml:"password"`  // 密码
+	DB       int    `yaml:"db"`        // 数据库编号
+}
+
 // NewRedisProvider 创建 Redis Provider
 // 参数：
 //   - name: Provider 名称
@@ -30,18 +41,50 @@ func NewRedisProvider(name string, cfg *RedisConfig) (Provider, error) {
 		return nil, fmt.Errorf("Redis 配置不能为空")
 	}
 
-	client := redis.NewClient(&redis.Options{
-		Addr:     cfg.Addr,
-		Password: cfg.Password,
-		DB:       cfg.DB,
-	})
+	// 兼容旧配置：如果直接配置了连接信息
+	if cfg.Storage == "" {
+		client := redis.NewClient(&redis.Options{
+			Addr:     cfg.Addr,
+			Password: cfg.Password,
+			DB:       cfg.DB,
+		})
 
-	// 测试连接
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
+		// 测试连接
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
 
-	if err := client.Ping(ctx).Err(); err != nil {
-		return nil, fmt.Errorf("Redis 连接失败: %w", err)
+		if err := client.Ping(ctx).Err(); err != nil {
+			return nil, fmt.Errorf("Redis 连接失败: %w", err)
+		}
+
+		keyPattern := cfg.KeyPattern
+		if keyPattern == "" {
+			keyPattern = "llmproxy:key:{api_key}"
+		}
+
+		return &RedisProvider{
+			BaseProvider: BaseProvider{
+				name:         name,
+				providerType: ProviderTypeRedis,
+			},
+			client:     client,
+			keyPattern: keyPattern,
+		}, nil
+	}
+
+	// 新配置：需要传入已创建的连接
+	return nil, fmt.Errorf("Redis Provider 需要使用 NewRedisProviderWithCache 创建")
+}
+
+// NewRedisProviderWithCache 使用已创建的 Redis 连接创建 Provider
+func NewRedisProviderWithCache(name string, client interface{}, cfg *RedisConfig) (Provider, error) {
+	if cfg == nil {
+		return nil, fmt.Errorf("Redis 配置不能为空")
+	}
+
+	redisClient, ok := client.(*redis.Client)
+	if !ok {
+		return nil, fmt.Errorf("无效的 Redis 客户端类型")
 	}
 
 	keyPattern := cfg.KeyPattern
@@ -54,7 +97,7 @@ func NewRedisProvider(name string, cfg *RedisConfig) (Provider, error) {
 			name:         name,
 			providerType: ProviderTypeRedis,
 		},
-		client:     client,
+		client:     redisClient,
 		keyPattern: keyPattern,
 	}, nil
 }

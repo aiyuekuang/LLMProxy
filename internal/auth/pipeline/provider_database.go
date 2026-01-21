@@ -33,44 +33,82 @@ func NewDatabaseProvider(name string, cfg *DatabaseConfig) (Provider, error) {
 		return nil, fmt.Errorf("数据库配置不能为空")
 	}
 
-	// 验证配置
-	if cfg.Driver == "" {
-		return nil, fmt.Errorf("数据库驱动不能为空")
+	// 兼容旧配置：如果直接配置了连接信息
+	if cfg.Storage == "" {
+		// 验证配置
+		if cfg.Driver == "" {
+			return nil, fmt.Errorf("数据库驱动不能为空")
+		}
+		if cfg.DSN == "" {
+			return nil, fmt.Errorf("数据库 DSN 不能为空")
+		}
+		if cfg.Table == "" {
+			return nil, fmt.Errorf("表名不能为空")
+		}
+		if cfg.KeyColumn == "" {
+			cfg.KeyColumn = "api_key"
+		}
+
+		// 打开数据库连接
+		db, err := sql.Open(cfg.Driver, cfg.DSN)
+		if err != nil {
+			return nil, fmt.Errorf("数据库连接失败: %w", err)
+		}
+
+		// 测试连接
+		if err := db.Ping(); err != nil {
+			db.Close()
+			return nil, fmt.Errorf("数据库 Ping 失败: %w", err)
+		}
+
+		// 设置连接池
+		db.SetMaxOpenConns(10)
+		db.SetMaxIdleConns(5)
+
+		return &DatabaseProvider{
+			BaseProvider: BaseProvider{
+				name:         name,
+				providerType: ProviderTypeDatabase,
+			},
+			db:        db,
+			table:     cfg.Table,
+			keyColumn: cfg.KeyColumn,
+			fields:    cfg.Fields,
+		}, nil
 	}
-	if cfg.DSN == "" {
-		return nil, fmt.Errorf("数据库 DSN 不能为空")
+
+	// 新配置：需要传入已创建的连接
+	return nil, fmt.Errorf("Database Provider 需要使用 NewDatabaseProviderWithDB 创建")
+}
+
+// NewDatabaseProviderWithDB 使用已创建的数据库连接创建 Provider
+func NewDatabaseProviderWithDB(name string, db interface{}, cfg *DatabaseConfig) (Provider, error) {
+	if cfg == nil {
+		return nil, fmt.Errorf("数据库配置不能为空")
 	}
+
+	sqlDB, ok := db.(*sql.DB)
+	if !ok {
+		return nil, fmt.Errorf("无效的数据库连接类型")
+	}
+
 	if cfg.Table == "" {
 		return nil, fmt.Errorf("表名不能为空")
 	}
-	if cfg.KeyColumn == "" {
-		cfg.KeyColumn = "api_key"
-	}
 
-	// 打开数据库连接
-	db, err := sql.Open(cfg.Driver, cfg.DSN)
-	if err != nil {
-		return nil, fmt.Errorf("数据库连接失败: %w", err)
+	keyColumn := cfg.KeyColumn
+	if keyColumn == "" {
+		keyColumn = "api_key"
 	}
-
-	// 测试连接
-	if err := db.Ping(); err != nil {
-		db.Close()
-		return nil, fmt.Errorf("数据库 Ping 失败: %w", err)
-	}
-
-	// 设置连接池
-	db.SetMaxOpenConns(10)
-	db.SetMaxIdleConns(5)
 
 	return &DatabaseProvider{
 		BaseProvider: BaseProvider{
 			name:         name,
 			providerType: ProviderTypeDatabase,
 		},
-		db:        db,
+		db:        sqlDB,
 		table:     cfg.Table,
-		keyColumn: cfg.KeyColumn,
+		keyColumn: keyColumn,
 		fields:    cfg.Fields,
 	}, nil
 }

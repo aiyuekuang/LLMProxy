@@ -108,10 +108,10 @@ func (r *Router) proxyWithRetry(req *http.Request, bodyBytes []byte, model strin
 	var lastErr error
 	
 	// 重试逻辑
-	err := retryRequest(&r.config.Retry, func() (int, error) {
+	err := retryRequest(r.config.Retry, func() (int, error) {
 		// 选择后端
 		if backend == nil {
-			selectedBackend = r.loadBalancer.Next("")
+			selectedBackend = r.loadBalancer.Next()
 			if selectedBackend == nil {
 				return 503, fmt.Errorf("没有可用的健康后端")
 			}

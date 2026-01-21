@@ -21,7 +21,7 @@ type LeastConnections struct {
 //   - healthCheck: 健康检查配置
 // 返回：
 //   - LoadBalancer: 负载均衡器实例
-func NewLeastConnections(backends []config.Backend, healthCheck *config.HealthCheck) LoadBalancer {
+func NewLeastConnections(backends []*config.Backend, healthCheck *config.HealthCheckConfig) LoadBalancer {
 	lb := &LeastConnections{
 		BaseLoadBalancer: NewBaseLoadBalancer(backends, healthCheck),
 		concurrent:       make(map[string]int),
@@ -29,18 +29,18 @@ func NewLeastConnections(backends []config.Backend, healthCheck *config.HealthCh
 
 	// 初始化并发计数
 	for _, b := range backends {
-		lb.concurrent[b.URL] = 0
+		if b != nil {
+			lb.concurrent[b.URL] = 0
+		}
 	}
 
 	return lb
 }
 
 // Next 获取并发数最少的健康后端
-// 参数：
-//   - model: 模型名称（可选）
 // 返回：
 //   - *Backend: 后端实例
-func (lc *LeastConnections) Next(model string) *Backend {
+func (lc *LeastConnections) Next() *Backend {
 	lc.mu.Lock()
 	defer lc.mu.Unlock()
 
@@ -49,11 +49,6 @@ func (lc *LeastConnections) Next(model string) *Backend {
 
 	for _, backend := range lc.GetBackends() {
 		if !backend.Healthy {
-			continue
-		}
-
-		// 检查模型匹配
-		if model != "" && !MatchModel(backend, model) {
 			continue
 		}
 

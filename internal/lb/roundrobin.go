@@ -21,7 +21,7 @@ type RoundRobin struct {
 //   - healthCheck: 健康检查配置
 // 返回：
 //   - LoadBalancer: 负载均衡器实例
-func NewRoundRobin(backends []config.Backend, healthCheck *config.HealthCheck) LoadBalancer {
+func NewRoundRobin(backends []*config.Backend, healthCheck *config.HealthCheckConfig) LoadBalancer {
 	return &RoundRobin{
 		BaseLoadBalancer: NewBaseLoadBalancer(backends, healthCheck),
 		current:          0,
@@ -30,11 +30,9 @@ func NewRoundRobin(backends []config.Backend, healthCheck *config.HealthCheck) L
 
 // Next 获取下一个健康的后端
 // 使用加权轮询算法
-// 参数：
-//   - model: 模型名称（可选）
 // 返回：
 //   - *Backend: 后端实例，如果没有健康后端则返回 nil
-func (r *RoundRobin) Next(model string) *Backend {
+func (r *RoundRobin) Next() *Backend {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -52,11 +50,6 @@ func (r *RoundRobin) Next(model string) *Backend {
 		r.current = (r.current + 1) % len(backends)
 
 		if backend.Healthy {
-			// 检查模型匹配
-			if model != "" && !MatchModel(backend, model) {
-				attempts++
-				continue
-			}
 			return backend
 		}
 

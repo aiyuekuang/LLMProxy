@@ -21,7 +21,7 @@ type LatencyBased struct {
 //   - healthCheck: 健康检查配置
 // 返回：
 //   - LoadBalancer: 负载均衡器实例
-func NewLatencyBased(backends []config.Backend, healthCheck *config.HealthCheck) LoadBalancer {
+func NewLatencyBased(backends []*config.Backend, healthCheck *config.HealthCheckConfig) LoadBalancer {
 	lb := &LatencyBased{
 		BaseLoadBalancer: NewBaseLoadBalancer(backends, healthCheck),
 		latency:          make(map[string]time.Duration),
@@ -29,18 +29,18 @@ func NewLatencyBased(backends []config.Backend, healthCheck *config.HealthCheck)
 
 	// 初始化延迟统计
 	for _, b := range backends {
-		lb.latency[b.URL] = 100 * time.Millisecond // 默认延迟
+		if b != nil {
+			lb.latency[b.URL] = 100 * time.Millisecond // 默认延迟
+		}
 	}
 
 	return lb
 }
 
 // Next 获取延迟最低的健康后端
-// 参数：
-//   - model: 模型名称（可选）
 // 返回：
 //   - *Backend: 后端实例
-func (lb *LatencyBased) Next(model string) *Backend {
+func (lb *LatencyBased) Next() *Backend {
 	lb.mu.RLock()
 	defer lb.mu.RUnlock()
 
@@ -49,11 +49,6 @@ func (lb *LatencyBased) Next(model string) *Backend {
 
 	for _, backend := range lb.GetBackends() {
 		if !backend.Healthy {
-			continue
-		}
-
-		// 检查模型匹配
-		if model != "" && !MatchModel(backend, model) {
 			continue
 		}
 

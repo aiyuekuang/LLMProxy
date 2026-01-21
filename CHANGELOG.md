@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-01-21
+
+### Added
+
+#### 数据库集成模块
+- **后端服务动态加载**：从数据库读取 `services` 表，支持与 LLMProxy-Admin 协作
+- **请求日志入库**：自动记录请求日志到数据库，支持用量统计查询
+- **存储层抽象**：新增 `internal/storage/` 统一管理数据库和缓存连接
+- **Redis 限流器**：新增 `internal/ratelimit/redis_limiter.go` 支持分布式限流
+
+#### 文档优化
+- **英文主文档**：`README.md` 改为英文，中文版移至 `README_CN.md`
+- **配置参考文档**：新增 `docs/configuration.md` 完整配置项说明
+- **配置模板**：新增 `docs/config-reference.yaml` 完整配置示例
+
+#### 鉴权增强
+- **Lua Provider**：新增纯 Lua 脚本鉴权 Provider
+- **Redis KeyStore**：新增 `internal/auth/keystore_redis.go` 支持 Redis 存储
+
+### Changed
+- **配置结构重构**：新增顶层 `storage` 配置块，统一数据库/缓存连接
+- **负载均衡优化**：重构负载均衡器接口，支持动态后端列表
+- **README 精简**：移除冗余场景说明，突出配置文档入口
+
+---
+
 ## [0.3.2] - 2026-01-18
 
 ### Added

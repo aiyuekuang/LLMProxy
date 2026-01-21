@@ -32,19 +32,21 @@ func FromConfig(cfg *config.AuthConfig) *PipelineConfig {
 	if len(cfg.Pipeline) > 0 {
 		for _, p := range cfg.Pipeline {
 			providerCfg := &ProviderConfig{
-				Name:          p.Name,
-				Type:          ProviderType(p.Type),
-				Enabled:       p.Enabled,
-				LuaScript:     p.LuaScript,
-				LuaScriptFile: p.LuaScriptFile,
+				Name:    p.Name,
+				Type:    ProviderType(p.Type),
+				Enabled: p.Enabled,
+			}
+
+			// 转换 Lua 配置
+			if p.Lua != nil {
+				providerCfg.LuaScript = p.Lua.Script
+				providerCfg.LuaScriptFile = p.Lua.Path
 			}
 
 			// 转换 Redis 配置
 			if p.Redis != nil {
 				providerCfg.Redis = &RedisConfig{
-					Addr:       p.Redis.Addr,
-					Password:   p.Redis.Password,
-					DB:         p.Redis.DB,
+					Storage:    p.Redis.Storage,
 					KeyPattern: p.Redis.KeyPattern,
 				}
 			}
@@ -52,8 +54,7 @@ func FromConfig(cfg *config.AuthConfig) *PipelineConfig {
 			// 转换数据库配置
 			if p.Database != nil {
 				providerCfg.Database = &DatabaseConfig{
-					Driver:    p.Database.Driver,
-					DSN:       p.Database.DSN,
+					Storage:   p.Database.Storage,
 					Table:     p.Database.Table,
 					KeyColumn: p.Database.KeyColumn,
 					Fields:    p.Database.Fields,
@@ -72,6 +73,11 @@ func FromConfig(cfg *config.AuthConfig) *PipelineConfig {
 					Timeout: timeout,
 					Headers: p.Webhook.Headers,
 				}
+			}
+
+			// 转换静态配置
+			if p.Static != nil {
+				providerCfg.StaticKeys = p.Static.Keys
 			}
 
 			pipelineConfig.Providers = append(pipelineConfig.Providers, providerCfg)

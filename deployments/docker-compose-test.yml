@@ -1,0 +1,35 @@
+version: '3.8'
+
+services:
+  # Redis 缓存服务
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "16379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+
+  # LLMProxy 服务
+  llmproxy:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    ports:
+      - "18000:8000"
+    volumes:
+      - ./config-test.yaml:/home/llmproxy/config.yaml:ro
+    environment:
+      - TZ=Asia/Shanghai
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped

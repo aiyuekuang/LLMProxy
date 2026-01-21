@@ -16,6 +16,16 @@ import (
 	"llmproxy/internal/routing"
 )
 
+// 全局 HTTP 客户端（复用连接池）
+var proxyClient = &http.Client{
+	Timeout: 0, // 流式响应不设超时
+	Transport: &http.Transport{
+		MaxIdleConns:        100,
+		MaxIdleConnsPerHost: 10,
+		IdleConnTimeout:     90 * time.Second,
+	},
+}
+
 // RequestBody 请求体结构（仅用于提取 stream 参数）
 type RequestBody struct {
 	Stream bool `json:"stream"`
@@ -72,7 +82,7 @@ func NewHandler(cfg *config.Config, loadBalancer lb.LoadBalancer, router *routin
 			resp, backend, err = router.ProxyRequest(r, bodyBytes, "")
 		} else {
 			// 使用简单负载均衡
-			backend = loadBalancer.Next("")
+			backend = loadBalancer.Next()
 			if backend == nil {
 				log.Println("没有可用的健康后端")
 				http.Error(w, "No healthy backend", http.StatusServiceUnavailable)
@@ -151,7 +161,7 @@ func NewHandler(cfg *config.Config, loadBalancer lb.LoadBalancer, router *routin
 				}
 				
 				// 发送用量数据（Webhook 或数据库）
-				SendUsage(cfg.UsageHook, usage)
+				SendUsage(cfg.Usage, usage)
 			}
 		}()
 	}
@@ -166,22 +176,13 @@ func NewHandler(cfg *config.Config, loadBalancer lb.LoadBalancer, router *routin
 //   - *http.Response: 响应
 //   - error: 错误信息
 func sendRequest(r *http.Request, backend *lb.Backend, bodyBytes []byte) (*http.Response, error) {
-	client := &http.Client{
-		Timeout: 0,
-		Transport: &http.Transport{
-			MaxIdleConns:        100,
-			MaxIdleConnsPerHost: 10,
-			IdleConnTimeout:     90 * time.Second,
-		},
-	}
-
 	proxyReq, err := http.NewRequest("POST", backend.URL+r.URL.Path, bytes.NewReader(bodyBytes))
 	if err != nil {
 		return nil, err
 	}
 
 	proxyReq.Header = r.Header.Clone()
-	return client.Do(proxyReq)
+	return proxyClient.Do(proxyReq)
 }
 
 // extractAPIKey 从请求中提取 API Key

@@ -1,23 +1,131 @@
 # LLMProxy 配置文件示例
+# 完整配置参考: docs/config-reference.yaml
 
-# 监听地址
-listen: ":8000"
+# ============================================================
+#                    服务器配置
+# ============================================================
+server:
+  listen: ":8000"
+  read_timeout: 30s
+  write_timeout: 60s
+  idle_timeout: 120s
 
-# 后端服务器列表
+# ============================================================
+#                    日志配置
+# ============================================================
+log:
+  level: info          # debug / info / warn / error
+  format: json         # json / text
+  output: stdout       # stdout / stderr / file path
+
+# ============================================================
+#                    存储配置（多数据源）
+# ============================================================
+storage:
+  databases:
+    - name: default
+      enabled: true
+      driver: mysql
+      host: localhost
+      port: 3306
+      user: root
+      password: password
+      database: llmproxy
+      max_open_conns: 20
+      max_idle_conns: 10
+
+  caches:
+    - name: default
+      enabled: true
+      driver: redis
+      addr: localhost:6379
+      password: ""
+      db: 0
+      pool_size: 10
+
+# ============================================================
+#                    后端服务列表
+# ============================================================
 backends:
-  - url: "http://localhost:8000"  # vLLM 服务地址
-    weight: 5                       # 权重（用于负载均衡）
-  - url: "http://localhost:8081"  # TGI 服务地址
+  - name: vllm-server
+    url: "http://localhost:8080"
+    weight: 5
+  - name: tgi-server
+    url: "http://localhost:8081"
     weight: 3
 
-# 用量上报 Webhook 配置
-usage_hook:
-  enabled: true                                    # 是否启用
-  url: "https://your-billing.com/llm-usage"      # Webhook URL
-  timeout: 1s                                      # 超时时间
-  retry: 2                                         # 重试次数
+# ============================================================
+#                    鉴权配置
+# ============================================================
+auth:
+  enabled: false
+  mode: first_match
+  header_names:
+    - Authorization
+    - X-API-Key
+  pipeline:
+    - name: redis_auth
+      type: redis
+      enabled: true
+      redis:
+        storage: default
+        key_pattern: "llmproxy:key:{api_key}"
 
-# 健康检查配置
+# ============================================================
+#                    路由配置
+# ============================================================
+routing:
+  enabled: true
+  load_balance: round_robin    # round_robin / least_connections / latency_based
+  timeout: 60s
+  retry:
+    enabled: true
+    max_retries: 3
+    initial_wait: 1s
+    max_wait: 10s
+
+# ============================================================
+#                    限流配置
+# ============================================================
+rate_limit:
+  enabled: false
+  storage: memory              # memory / redis
+  redis: default               # 引用 storage.caches 中的连接
+  global:
+    enabled: true
+    requests_per_second: 100
+    burst_size: 200
+  per_key:
+    enabled: true
+    requests_per_second: 10
+    max_concurrent: 5
+
+# ============================================================
+#                    健康检查配置
+# ============================================================
 health_check:
-  interval: 10s      # 检查间隔
-  path: /health      # 健康检查路径
+  enabled: true
+  interval: 30s
+  timeout: 5s
+  path: /health
+
+# ============================================================
+#                    指标配置
+# ============================================================
+metrics:
+  enabled: true
+  path: /metrics
+
+# ============================================================
+#                    用量上报配置
+# ============================================================
+usage:
+  enabled: false
+  reporters:
+    - name: webhook_reporter
+      type: webhook
+      enabled: true
+      webhook:
+        url: "https://your-billing.com/llm-usage"
+        timeout: 3s
+        retry: 3

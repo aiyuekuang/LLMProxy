@@ -77,6 +77,34 @@ func InitUsageDatabase(name string, cfg *config.UsageDatabaseConfig) error {
 	return nil
 }
 
+// InitUsageDatabaseWithConnection 使用已创建的数据库连接初始化用量数据库
+func InitUsageDatabaseWithConnection(name string, db *sql.DB, table string) error {
+	if db == nil {
+		return fmt.Errorf("数据库连接不能为空")
+	}
+
+	if table == "" {
+		table = "usage_records"
+	}
+
+	// 自动创建表（如果不存在）
+	if err := createUsageTable(db, "mysql", table); err != nil {
+		log.Printf("警告: 创建用量表失败: %v（请手动创建）", err)
+	}
+
+	// 存储到全局映射
+	usageDBMutex.Lock()
+	usageDBWriters[name] = &UsageDBWriter{
+		name:  name,
+		db:    db,
+		table: table,
+	}
+	usageDBMutex.Unlock()
+
+	log.Printf("用量数据库 [%s] 已初始化: 表: %s", name, table)
+	return nil
+}
+
 // createUsageTable 创建用量表
 func createUsageTable(db *sql.DB, driver, table string) error {
 	var createSQL string

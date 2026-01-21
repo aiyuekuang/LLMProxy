@@ -13,6 +13,16 @@ import (
 	"llmproxy/internal/metrics"
 )
 
+// 全局 Webhook HTTP 客户端（复用连接池）
+var webhookClient = &http.Client{
+	Timeout: 10 * time.Second,
+	Transport: &http.Transport{
+		MaxIdleConns:        20,
+		MaxIdleConnsPerHost: 5,
+		IdleConnTimeout:     60 * time.Second,
+	},
+}
+
 // UsageRecord 用量记录
 type UsageRecord struct {
 	RequestID   string    `json:"request_id"`        // 请求 ID
@@ -178,9 +188,11 @@ func SendUsage(cfg *config.UsageConfig, usage *UsageRecord) {
 //   - reporter: 上报器配置
 //   - usage: 用量记录
 func sendUsageToWebhook(reporter *config.UsageReporter, usage *UsageRecord) {
-	if reporter == nil || !reporter.Enabled || usage == nil {
+	if reporter == nil || !reporter.Enabled || reporter.Webhook == nil || usage == nil {
 		return
 	}
+
+	webhook := reporter.Webhook
 
 	// 序列化用量数据
 	data, err := json.Marshal(usage)
@@ -191,12 +203,12 @@ func sendUsageToWebhook(reporter *config.UsageReporter, usage *UsageRecord) {
 	}
 
 	// 发送 Webhook（支持重试）
-	maxRetries := reporter.Retry
+	maxRetries := webhook.Retry
 	if maxRetries <= 0 {
 		maxRetries = 1
 	}
 
-	timeout := reporter.Timeout
+	timeout := webhook.Timeout
 	if timeout == 0 {
 		timeout = 3 * time.Second
 	}
@@ -207,7 +219,7 @@ func sendUsageToWebhook(reporter *config.UsageReporter, usage *UsageRecord) {
 			time.Sleep(time.Duration(attempt) * 100 * time.Millisecond)
 		}
 
-		if sendWebhookOnce(reporter.URL, timeout, data) {
+		if sendWebhookOnce(webhook.URL, timeout, data) {
 			metrics.RecordWebhookSuccess()
 			return
 		}
@@ -236,8 +248,7 @@ func sendWebhookOnce(url string, timeout time.Duration, data []byte) bool {
 
 	req.Header.Set("Content-Type", "application/json")
 
-	client := &http.Client{Timeout: timeout}
-	resp, err := client.Do(req)
+	resp, err := webhookClient.Do(req)
 	if err != nil {
 		log.Printf("Webhook 请求失败: %v", err)
 		return false
@@ -252,6 +263,5 @@ func sendWebhookOnce(url string, timeout time.Duration, data []byte) bool {
 		return false
 	}
 
-	log.Printf("Webhook 发送成功: %s", string(data))
 	return true
 }

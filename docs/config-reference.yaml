@@ -1,0 +1,630 @@
+# ============================================================
+#              LLMProxy 配置文件完整参考
+# ============================================================
+#
+# 命名规范：
+#   - enabled: 模块/功能开关
+#   - driver:  驱动类型（mysql/postgres/sqlite/redis/memory）
+#   - storage: 引用顶层存储（database/cache）
+#   - interval: 时间间隔
+#   - timeout:  超时时间
+#   - path:     路径（文件路径或 URL 路径）
+#   - url:      完整 URL 地址
+#   - addr:     地址（host:port 格式）
+#
+# ============================================================
+
+# ============================================================
+#                    服务器配置 (server)
+# ============================================================
+server:
+  listen: ":8000"                  # 监听地址，格式: ":端口" 或 "IP:端口"
+  read_timeout: 30s                # 读取超时
+  write_timeout: 60s               # 写入超时（LLM 响应可能较长）
+  idle_timeout: 120s               # 空闲连接超时
+  max_header_bytes: 1048576        # 最大请求头大小 (1MB)
+  max_body_size: 10485760          # 最大请求体大小 (10MB)
+  
+  # CORS 跨域配置
+  cors:
+    enabled: false                 # 是否启用
+    allowed_origins:               # 允许的来源
+      - "*"
+    allowed_methods:               # 允许的方法
+      - "GET"
+      - "POST"
+      - "OPTIONS"
+    allowed_headers:               # 允许的请求头
+      - "Authorization"
+      - "Content-Type"
+      - "X-API-Key"
+    expose_headers: []             # 暴露的响应头
+    allow_credentials: false       # 是否允许携带凭证
+    max_age: 86400                 # 预检请求缓存时间（秒）
+  
+  # TLS/HTTPS 配置
+  tls:
+    enabled: false                 # 是否启用 HTTPS
+    cert_file: "./certs/server.crt"
+    key_file: "./certs/server.key"
+    # 可选：客户端证书验证
+    # client_ca_file: "./certs/ca.crt"
+    # client_auth: "require"       # none / request / require
+
+# ============================================================
+#                    系统日志配置 (log)
+# ============================================================
+# 注意：log 是系统运行日志，logging 是请求/访问日志，两者用途不同
+log:
+  level: "info"                    # 日志级别: debug / info / warn / error
+  format: "json"                   # 格式: json / text
+  output: "stdout"                 # 输出: stdout / stderr / file
+  # 当 output=file 时的配置
+  file:
+    path: "./logs/llmproxy.log"
+    rotate: "daily"                # 轮转: daily / hourly / size
+    max_size: 100                  # MB (当 rotate=size 时)
+    max_age: 7                     # 保留天数
+    compress: true                 # 是否压缩旧日志
+
+# ============================================================
+#                    存储连接配置 (storage)
+# ============================================================
+# 顶层定义数据库和缓存连接池，供各模块通过 name 引用
+storage:
+
+  # ---------- 数据库连接池 ----------
+  # 支持: mysql / postgres / sqlite
+  databases:
+    # ----- 主数据库 -----
+    - name: "primary"              # 连接名称，供其他模块引用
+      driver: "mysql"              # 驱动: mysql / postgres / sqlite
+      host: "localhost"            # 主机地址
+      port: 3306                   # 端口
+      user: "root"                 # 用户名
+      password: "password"         # 密码
+      database: "llmproxy"         # 数据库名
+      # dsn: ""                    # 或直接指定 DSN（优先级更高）
+      # 连接池配置
+      max_open_conns: 100          # 最大打开连接数
+      max_idle_conns: 10           # 最大空闲连接数
+      conn_max_lifetime: 1h        # 连接最大生命周期
+      conn_max_idle_time: 10m      # 空闲连接最大时间
+    
+    # ----- 日志专用库 -----
+    - name: "logs"
+      driver: "mysql"
+      host: "logs-db"
+      port: 3306
+      user: "root"
+      password: "password"
+      database: "llmproxy_logs"
+      max_open_conns: 50
+      max_idle_conns: 5
+      conn_max_lifetime: 1h
+      conn_max_idle_time: 10m
+    
+    # ----- 本地 SQLite -----
+    - name: "local"
+      driver: "sqlite"
+      path: "./data/local.db"
+
+  # ---------- 缓存连接池 ----------
+  # 支持: redis / memory
+  caches:
+    # ----- 主缓存 -----
+    - name: "primary"              # 连接名称，供其他模块引用
+      driver: "redis"              # 驱动: redis / memory
+      addr: "localhost:6379"       # Redis 地址
+      password: ""                 # Redis 密码
+      db: 0                        # Redis 数据库编号
+      # 连接池配置
+      pool_size: 100               # 连接池大小
+      min_idle_conns: 10           # 最小空闲连接数
+      dial_timeout: 5s             # 连接超时
+      read_timeout: 3s             # 读取超时
+      write_timeout: 3s            # 写入超时
+    
+    # ----- 限流专用缓存 -----
+    - name: "ratelimit"
+      driver: "redis"
+      addr: "redis-ratelimit:6379"
+      db: 1
+      pool_size: 50
+      min_idle_conns: 5
+      dial_timeout: 5s
+      read_timeout: 3s
+      write_timeout: 3s
+    
+    # ----- 本地内存缓存 -----
+    - name: "local"
+      driver: "memory"
+      max_size: 10000              # 最大条目数
+      ttl: 5m                      # 默认过期时间
+
+# ============================================================
+#                    后端服务配置 (backends)
+# ============================================================
+# 静态配置的后端服务列表
+# 如果启用了 discovery 模块，此配置可为空
+backends:
+  - name: "vllm-1"                 # 后端名称（用于日志和监控）
+    url: "http://localhost:8000"   # 后端服务 URL
+    weight: 5                      # 负载均衡权重
+    timeout: 60s                   # 请求超时
+    connect_timeout: 5s            # 连接超时
+    max_idle_conns: 100            # 最大空闲连接
+    headers:                       # 自定义请求头（可选）
+      X-Backend-ID: "backend-1"
+  
+  - name: "vllm-2"
+    url: "http://localhost:8001"
+    weight: 3
+    timeout: 60s
+    connect_timeout: 5s
+
+# ============================================================
+#                    服务发现模块 (discovery)
+# ============================================================
+# 从多种数据源动态加载后端服务配置
+discovery:
+  enabled: true                    # 是否启用
+  mode: "merge"                    # 模式: merge(合并所有源) / first(首个有效源)
+  interval: 30s                    # 全局同步间隔
+  
+  # 发现源列表（按顺序执行）
+  sources:
+    
+    # ----- 数据库发现 -----
+    - name: "db_discovery"
+      type: "database"
+      enabled: true
+      database:
+        storage: "primary"         # 引用 storage.databases[name]
+        table: "services"          # 服务表名
+        # 字段映射（数据库列名 → 后端属性）
+        fields:
+          name: "name"             # 后端名称
+          url: "endpoint"          # URL 列名
+          weight: "weight"         # 权重列名
+          status: "status"         # 状态列名（enabled/disabled）
+      script:                      # Lua 后处理脚本（过滤/转换服务列表）
+        enabled: false
+        path: "./scripts/discovery_filter.lua"
+        timeout: 1s
+        max_memory: 10
+    
+    # ----- 静态配置 -----
+    - name: "static_discovery"
+      type: "static"
+      enabled: false
+      static:
+        backends:
+          - name: "static-1"
+            url: "http://localhost:8000"
+            weight: 5
+          - name: "static-2"
+            url: "http://localhost:8001"
+            weight: 3
+      script:
+        enabled: false
+        path: "./scripts/discovery_static.lua"
+        timeout: 1s
+        max_memory: 10
+    
+    # ----- Consul 服务发现 -----
+    - name: "consul_discovery"
+      type: "consul"
+      enabled: false
+      consul:
+        addr: "http://consul:8500"
+        service: "llm-backend"     # 服务名
+        tag: "production"          # 标签过滤
+        interval: 10s              # 独立同步间隔
+      script:
+        enabled: false
+        path: "./scripts/discovery_consul.lua"
+        timeout: 1s
+        max_memory: 10
+    
+    # ----- Kubernetes 服务发现 -----
+    - name: "k8s_discovery"
+      type: "kubernetes"
+      enabled: false
+      kubernetes:
+        namespace: "llm"           # 命名空间
+        service: "vllm"            # Service 名称
+        port: 8000                 # 端口
+        label_selector: "app=vllm" # 标签选择器
+      script:
+        enabled: false
+        path: "./scripts/discovery_k8s.lua"
+        timeout: 1s
+        max_memory: 10
+    
+    # ----- Etcd 服务发现 -----
+    - name: "etcd_discovery"
+      type: "etcd"
+      enabled: false
+      etcd:
+        endpoints:
+          - "http://etcd:2379"
+        prefix: "/services/llm"    # Key 前缀
+        username: ""
+        password: ""
+      script:
+        enabled: false
+        path: "./scripts/discovery_etcd.lua"
+        timeout: 1s
+        max_memory: 10
+    
+    # ----- HTTP 服务发现 -----
+    - name: "http_discovery"
+      type: "http"
+      enabled: false
+      http:
+        url: "http://service-registry/api/services"
+        method: "GET"
+        interval: 30s
+        timeout: 5s
+        headers:
+          Authorization: "Bearer xxx"
+      script:
+        enabled: false
+        path: "./scripts/discovery_http.lua"
+        timeout: 1s
+        max_memory: 10
+
+# ============================================================
+#                    鉴权模块 (auth)
+# ============================================================
+# API Key 验证，支持多种验证方式的管道模式
+auth:
+  enabled: true                    # 是否启用
+  mode: "first_match"              # 模式: first_match(首个匹配) / all(全部通过)
+  
+  # 跳过鉴权的路径（不需要 API Key）
+  skip_paths:
+    - "/health"
+    - "/ready"
+    - "/metrics"
+  
+  # 认证头名称列表
+  header_names:
+    - "Authorization"
+    - "X-API-Key"
+  
+  # 鉴权管道（按顺序执行）
+  pipeline:
+    
+    # ----- Redis 鉴权 -----
+    - name: "redis_auth"           # 提供者名称
+      type: "redis"                # 类型: redis / database / webhook / lua
+      enabled: true                # 是否启用此提供者
+      redis:
+        storage: "primary"         # 引用 storage.caches[name]
+        key_pattern: "llmproxy:key:{api_key}"  # Key 模式
+      script:                      # Lua 后处理脚本
+        enabled: false
+        path: "./scripts/auth_redis_post.lua"
+        timeout: 1s
+        max_memory: 10
+    
+    # ----- 数据库鉴权 -----
+    - name: "db_auth"
+      type: "database"
+      enabled: false
+      database:
+        storage: "primary"         # 引用 storage.databases[name]
+        table: "api_keys"          # 表名
+        key_column: "key"          # API Key 列名
+        fields:                    # 需要查询的字段
+          - "user_id"
+          - "quota"
+          - "status"
+      script:                      # Lua 后处理脚本
+        enabled: false
+        path: "./scripts/auth_db_post.lua"
+        timeout: 1s
+        max_memory: 10
+    
+    # ----- Webhook 鉴权 -----
+    - name: "webhook_auth"
+      type: "webhook"
+      enabled: false
+      webhook:
+        url: "https://auth.example.com/verify"
+        method: "POST"             # HTTP 方法
+        timeout: 5s                # 超时时间
+        headers:                   # 自定义请求头
+          X-Service: "llmproxy"
+      script:                      # Lua 后处理脚本
+        enabled: false
+        path: "./scripts/auth_webhook_post.lua"
+        timeout: 1s
+        max_memory: 10
+    
+    # ----- Lua 脚本鉴权 -----
+    - name: "lua_auth"
+      type: "lua"
+      enabled: false
+      lua:
+        path: "./scripts/auth.lua" # 脚本文件路径
+        # script: |                # 或内联脚本
+        #   return true
+        timeout: 1s
+        max_memory: 10             # MB
+    
+    # ----- 静态配置鉴权 -----
+    - name: "static_auth"
+      type: "static"              # 静态配置
+      enabled: false
+      static:
+        keys:
+          - key: "sk-test-key-1"
+            name: "测试 Key 1"
+            user_id: "user_001"
+            status: "enabled"      # enabled / disabled
+            total_quota: 1000000   # 总配额（Token）
+            used_quota: 0
+            quota_reset_period: "monthly"  # daily / weekly / monthly / never
+            allowed_ips: []        # IP 白名单
+            denied_ips: []         # IP 黑名单
+            expires_at: null       # 过期时间
+      script:                      # Lua 后处理脚本
+        enabled: false
+        path: "./scripts/auth_static_post.lua"
+        timeout: 1s
+        max_memory: 10
+
+# ============================================================
+#                    日志模块 (logging)
+# ============================================================
+# 请求日志和访问日志
+logging:
+  enabled: true                    # 是否启用
+  
+  # ----- 请求日志 -----
+  # 记录每次 API 请求的详细信息（模型、Token、延迟等）
+  request:
+    enabled: true                  # 是否启用
+    storage: "primary"             # 存储方式: 引用 storage.databases[name] / file / stdout
+    script:                        # Lua 脚本（决定是否记录、修改日志内容）
+      enabled: false
+      path: "./scripts/log_filter.lua"
+      timeout: 1s
+      max_memory: 10
+    # 当 storage=database 时，自动使用 storage.database
+    # 当 storage=file 时，需要配置 file:
+    # file:
+    #   path: "./logs/requests.log"
+    #   rotate: "daily"            # 轮转: daily / hourly / size
+    #   max_size: 100              # MB (当 rotate=size 时)
+    #   max_age: 7                 # 保留天数
+  
+  # ----- 访问日志 -----
+  # 记录 HTTP 访问日志（类似 Nginx access log）
+  access:
+    enabled: false
+    storage: "file"
+    file:
+      path: "./logs/access.log"
+      rotate: "daily"
+      max_age: 7
+    script:                        # Lua 脚本（过滤访问日志）
+      enabled: false
+      path: "./scripts/access_filter.lua"
+      timeout: 1s
+      max_memory: 10
+
+# ============================================================
+#                    限流模块 (rate_limit)
+# ============================================================
+# 请求频率限制
+rate_limit:
+  enabled: false                   # 是否启用
+  storage: "primary"               # 存储方式: 引用 storage.caches[name] / memory
+  script:                          # Lua 脚本（自定义限流逻辑）
+    enabled: false
+    path: "./scripts/ratelimit.lua"
+    timeout: 1s
+    max_memory: 10
+  # 当 storage=cache 时，自动使用 storage.cache
+  
+  # ----- 全局限流 -----
+  global:
+    enabled: true
+    requests_per_second: 100       # 每秒请求数
+    requests_per_minute: 1000      # 每分钟请求数
+    burst_size: 200                # 突发容量
+  
+  # ----- 按 Key 限流 -----
+  per_key:
+    enabled: true
+    requests_per_second: 10        # 每秒请求数
+    requests_per_minute: 60        # 每分钟请求数
+    tokens_per_minute: 100000      # 每分钟 Token 数
+    max_concurrent: 10             # 最大并发数
+    burst_size: 20                 # 突发容量
+
+# ============================================================
+#                    路由模块 (routing)
+# ============================================================
+# 负载均衡、重试和故障转移
+routing:
+  enabled: true                    # 是否启用
+  load_balance: "weighted"         # 策略: round_robin / weighted / least_conn / random
+  
+  # 超时配置
+  timeout: 60s                     # 总请求超时（覆盖后端默认值）
+  connect_timeout: 5s              # 连接超时
+  
+  # Lua 脚本（自定义路由选择）
+  # 注意：此脚本仅用于路由选择逻辑，hooks.on_route 用于生命周期钩子
+  script:
+    enabled: false
+    path: "./scripts/routing.lua"
+    timeout: 1s
+    max_memory: 10
+  
+  # ----- 重试配置 -----
+  retry:
+    enabled: true                  # 是否启用重试
+    max_retries: 3                 # 最大重试次数
+    initial_wait: 1s               # 初始等待时间
+    max_wait: 10s                  # 最大等待时间
+    multiplier: 2.0                # 退避乘数
+    retry_on:                      # 重试条件
+      - "5xx"                      # 5xx 服务端错误
+      - "connect_failure"          # 连接失败
+      - "timeout"                  # 超时
+  
+  # ----- 故障转移配置 -----
+  fallback:
+    - primary: "http://localhost:8000"
+      fallback:
+        - "http://localhost:8001"
+        - "http://localhost:8002"
+
+# ============================================================
+#                    健康检查模块 (health_check)
+# ============================================================
+# 后端服务健康检查
+health_check:
+  enabled: true                    # 是否启用
+  interval: 30s                    # 检查间隔
+  timeout: 5s                      # 超时时间
+  method: "GET"                    # HTTP 方法
+  path: "/health"                  # 健康检查路径
+  expected_status: 200             # 期望的状态码
+  unhealthy_threshold: 3           # 连续失败次数判定为不健康
+  healthy_threshold: 2             # 连续成功次数判定为健康
+  script:                          # Lua 脚本（自定义健康判断逻辑）
+    enabled: false
+    path: "./scripts/health_check.lua"
+    timeout: 1s
+    max_memory: 10
+
+# ============================================================
+#                    指标模块 (metrics)
+# ============================================================
+# Prometheus 指标暴露
+metrics:
+  enabled: true                    # 是否启用
+  path: "/metrics"                 # 指标端点路径
+  # 自定义指标
+  custom_labels:                   # 自定义标签
+    - "user_id"
+    - "api_key"
+  # 直方图桶配置
+  latency_buckets:                 # 延迟直方图桶 (秒)
+    - 0.01
+    - 0.05
+    - 0.1
+    - 0.5
+    - 1.0
+    - 5.0
+    - 10.0
+
+# ============================================================
+#                    用量上报模块 (usage)
+# ============================================================
+# Token 用量统计上报
+usage:
+  enabled: false                   # 是否启用
+  
+  # 上报器列表（可配置多个）
+  reporters:
+    
+    # ----- Webhook 上报 -----
+    - name: "billing_webhook"
+      type: "webhook"
+      enabled: true
+      webhook:
+        url: "https://billing.example.com/usage"
+        method: "POST"
+        timeout: 5s
+        retry: 3                   # 重试次数
+        headers:
+          Authorization: "Bearer xxx"
+      script:                      # Lua 脚本（过滤/转换用量数据）
+        enabled: false
+        path: "./scripts/usage_filter.lua"
+        timeout: 1s
+        max_memory: 10
+    
+    # ----- 数据库上报 -----
+    - name: "db_usage"
+      type: "database"
+      enabled: false
+      database:
+        storage: "primary"         # 引用 storage.databases[name]
+        table: "usage_records"     # 表名
+      script:
+        enabled: false
+        path: "./scripts/usage_db.lua"
+        timeout: 1s
+        max_memory: 10
+
+# ============================================================
+#                    生命周期钩子 (hooks)
+# ============================================================
+# 请求生命周期的全局 Lua 钩子
+# 执行顺序: on_request → on_auth → on_route → [后端] → on_response → on_complete
+# 如发生错误: on_error
+hooks:
+  enabled: false                   # 是否启用
+  
+  # ----- 请求进入 -----
+  # 请求刚进入时触发，可修改请求内容
+  on_request:
+    enabled: false
+    path: "./scripts/on_request.lua"
+    timeout: 1s
+    max_memory: 10
+  
+  # ----- 鉴权完成后 -----
+  # 鉴权通过后触发，可获取用户信息
+  on_auth:
+    enabled: false
+    path: "./scripts/on_auth.lua"
+    timeout: 1s
+    max_memory: 10
+  
+  # ----- 路由选择时 -----
+  # 选择后端服务时触发，可自定义路由逻辑
+  on_route:
+    enabled: false
+    path: "./scripts/on_route.lua"
+    timeout: 1s
+    max_memory: 10
+  
+  # ----- 响应返回前 -----
+  # 后端响应返回前触发，可修改响应内容
+  on_response:
+    enabled: false
+    path: "./scripts/on_response.lua"
+    timeout: 1s
+    max_memory: 10
+  
+  # ----- 发生错误时 -----
+  # 请求处理出错时触发，可自定义错误响应
+  on_error:
+    enabled: false
+    path: "./scripts/on_error.lua"
+    timeout: 1s
+    max_memory: 10
+  
+  # ----- 请求完成时 -----
+  # 请求完全结束后触发，可用于清理或统计
+  on_complete:
+    enabled: false
+    path: "./scripts/on_complete.lua"
+    timeout: 1s
+    max_memory: 10
+
+# ============================================================
+#                    说明
+# ============================================================
+# 静态 API Key 已移至 auth.pipeline 中的 static 类型提供者
+# 所有鉴权方式统一在 pipeline 中配置，保持一致性

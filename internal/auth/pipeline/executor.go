@@ -32,6 +32,18 @@ type providerWithConfig struct {
 //   - *Executor: 执行器实例
 //   - error: 错误信息
 func NewExecutor(cfg *PipelineConfig, apiKeys []*config.APIKey) (*Executor, error) {
+	return NewExecutorWithStorage(cfg, nil, apiKeys)
+}
+
+// NewExecutorWithStorage 创建带存储管理器的管道执行器
+// 参数：
+//   - cfg: 管道配置
+//   - storageManager: 存储管理器
+//   - apiKeys: API Key 列表（用于 file provider）
+// 返回：
+//   - *Executor: 执行器实例
+//   - error: 错误信息
+func NewExecutorWithStorage(cfg *PipelineConfig, storageManager interface{}, apiKeys []*config.APIKey) (*Executor, error) {
 	if cfg == nil || !cfg.Enabled {
 		return nil, nil
 	}
@@ -48,7 +60,7 @@ func NewExecutor(cfg *PipelineConfig, apiKeys []*config.APIKey) (*Executor, erro
 			continue
 		}
 
-		provider, err := executor.createProvider(providerCfg, apiKeys)
+		provider, err := executor.createProviderWithStorage(providerCfg, storageManager, apiKeys)
 		if err != nil {
 			return nil, fmt.Errorf("创建 Provider [%s] 失败: %w", providerCfg.Name, err)
 		}
@@ -72,18 +84,51 @@ func NewExecutor(cfg *PipelineConfig, apiKeys []*config.APIKey) (*Executor, erro
 
 // createProvider 创建 Provider 实例
 func (e *Executor) createProvider(cfg *ProviderConfig, apiKeys []*config.APIKey) (Provider, error) {
+	return e.createProviderWithStorage(cfg, nil, apiKeys)
+}
+
+// createProviderWithStorage 创建带存储管理器的 Provider 实例
+func (e *Executor) createProviderWithStorage(cfg *ProviderConfig, storageManager interface{}, apiKeys []*config.APIKey) (Provider, error) {
 	switch cfg.Type {
 	case ProviderTypeFile:
 		return NewFileProvider(cfg.Name, apiKeys), nil
 
+	case ProviderTypeStatic:
+		// 静态配置使用 StaticKeys
+		return NewFileProvider(cfg.Name, cfg.StaticKeys), nil
+
 	case ProviderTypeRedis:
+		if cfg.Redis == nil {
+			return nil, fmt.Errorf("Redis Provider 配置为空")
+		}
+		if storageManager != nil && cfg.Redis.Storage != "" {
+			if sm, ok := storageManager.(interface{ GetCache(string) interface{} }); ok {
+				if cache := sm.GetCache(cfg.Redis.Storage); cache != nil {
+					return NewRedisProviderWithCache(cfg.Name, cache, cfg.Redis)
+				}
+			}
+		}
 		return NewRedisProvider(cfg.Name, cfg.Redis)
 
 	case ProviderTypeDatabase:
+		if cfg.Database == nil {
+			return nil, fmt.Errorf("Database Provider 配置为空")
+		}
+		if storageManager != nil && cfg.Database.Storage != "" {
+			if sm, ok := storageManager.(interface{ GetDatabase(string) interface{} }); ok {
+				if db := sm.GetDatabase(cfg.Database.Storage); db != nil {
+					return NewDatabaseProviderWithDB(cfg.Name, db, cfg.Database)
+				}
+			}
+		}
 		return NewDatabaseProvider(cfg.Name, cfg.Database)
 
 	case ProviderTypeWebhook:
 		return NewWebhookProvider(cfg.Name, cfg.Webhook)
+
+	case ProviderTypeLua:
+		// Lua 类型使用脚本执行
+		return NewLuaProvider(cfg.Name, cfg.LuaScript, cfg.LuaScriptFile)
 
 	default:
 		return nil, fmt.Errorf("未知的 Provider 类型: %s", cfg.Type)
@@ -313,5 +358,8 @@ func (e *Executor) Close() error {
 
 // GetHeaderNames 获取认证 Header 名称列表
 func (e *Executor) GetHeaderNames() []string {
+	if e.config == nil {
+		return nil
+	}
 	return e.config.HeaderNames
 }

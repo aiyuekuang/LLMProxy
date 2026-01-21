@@ -103,25 +103,55 @@ func NewHandler(cfg *config.Config, loadBalancer lb.LoadBalancer, router *routin
 
 		log.Printf("请求转发到后端: %s, stream=%v", backend.URL, reqBody.Stream)
 
-		// 6. 读取响应体（用于用量收集）
-		respBody, err := io.ReadAll(resp.Body)
-		if err != nil {
-			log.Printf("读取响应体失败: %v", err)
-			http.Error(w, "Backend error", http.StatusBadGateway)
-			metrics.RecordRequest(r.URL.Path, reqBody.Stream, backend.URL, float64(time.Since(start).Milliseconds()), http.StatusBadGateway)
-			return
-		}
+		// 6. 处理响应
+		var respBody []byte
 
-		// 7. 透传响应到客户端
 		if reqBody.Stream {
-			// 流式响应
+			// 流式响应：逐块转发，实现真正的 SSE 流式传输
 			w.Header().Set("Content-Type", "text/event-stream")
 			w.Header().Set("Cache-Control", "no-cache")
 			w.Header().Set("Connection", "keep-alive")
+			w.Header().Set("X-Accel-Buffering", "no") // 禁用 nginx 缓冲
 			w.WriteHeader(resp.StatusCode)
-			w.Write(respBody)
+
+			// 获取 Flusher 接口，用于立即刷新数据到客户端
+			flusher, ok := w.(http.Flusher)
+			if !ok {
+				log.Println("ResponseWriter 不支持 Flusher")
+			}
+
+			// 使用缓冲区收集完整响应（用于后续用量统计）
+			var buffer bytes.Buffer
+			buf := make([]byte, 4096)
+
+			for {
+				n, readErr := resp.Body.Read(buf)
+				if n > 0 {
+					// 写入客户端
+					w.Write(buf[:n])
+					if flusher != nil {
+						flusher.Flush() // 立即刷新到客户端
+					}
+					// 同时收集到缓冲区
+					buffer.Write(buf[:n])
+				}
+				if readErr != nil {
+					if readErr != io.EOF {
+						log.Printf("读取流式响应失败: %v", readErr)
+					}
+					break
+				}
+			}
+			respBody = buffer.Bytes()
 		} else {
-			// 非流式响应
+			// 非流式响应：读取完整响应后返回
+			respBody, err = io.ReadAll(resp.Body)
+			if err != nil {
+				log.Printf("读取响应体失败: %v", err)
+				http.Error(w, "Backend error", http.StatusBadGateway)
+				metrics.RecordRequest(r.URL.Path, reqBody.Stream, backend.URL, float64(time.Since(start).Milliseconds()), http.StatusBadGateway)
+				return
+			}
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(resp.StatusCode)
 			w.Write(respBody)

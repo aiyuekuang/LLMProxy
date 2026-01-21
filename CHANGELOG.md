@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-01-21
+
+### Fixed
+- **流式响应优化**：修复 SSE 流式传输，实现逐块转发而非等待完整响应
+  - 添加 `http.Flusher` 支持，每次读取立即刷新到客户端
+  - 添加 `X-Accel-Buffering: no` Header 禁用 nginx 缓冲
+  - 分离流式和非流式响应处理逻辑
+
+---
+
 ## [0.4.0] - 2026-01-21
 
 ### Added

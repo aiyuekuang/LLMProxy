@@ -1,27 +1,38 @@
 # 简化配置 - 用于本地测试
 # 请将后端 URL 修改为你实际的 OpenAI 兼容服务地址
 
-listen: ":8000"
+server:
+  listen: ":8000"
 
 backends:
   # 选项 1: 使用 OpenAI 官方 API（需要 API Key）
-  # - url: "https://api.openai.com"
+  # - name: openai
+  #   url: "https://api.openai.com"
   #   weight: 5
   
   # 选项 2: 使用本地 vLLM 服务
-  # - url: "http://host.docker.internal:8000"
+  # - name: vllm-local
+  #   url: "http://host.docker.internal:8000"
   #   weight: 5
   
   # 选项 3: 使用其他 OpenAI 兼容服务
-  - url: "http://your-llm-backend:8000"
+  - name: default
+    url: "http://your-llm-backend:8000"
     weight: 5
 
-usage_hook:
+# 用量上报
+usage:
   enabled: true
-  url: "http://webhook-receiver:3001/llm-usage"  # 使用容器内部网络
-  timeout: 1s
-  retry: 2
+  reporters:
+    - name: webhook
+      type: webhook
+      enabled: true
+      webhook:
+        url: "http://webhook-receiver:3001/llm-usage"
+        timeout: 1s
+        retry: 2
 
 health_check:
+  enabled: true
   interval: 10s
   path: /health

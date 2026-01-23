@@ -10,15 +10,16 @@ import (
 
 // LatencyBased 延迟优先负载均衡器
 type LatencyBased struct {
-	*BaseLoadBalancer                    // 嵌入基础负载均衡器
+	*BaseLoadBalancer                          // 嵌入基础负载均衡器
 	latency           map[string]time.Duration // 每个后端的平均延迟
-	mu                sync.RWMutex       // 读写锁
+	mu                sync.RWMutex             // 读写锁
 }
 
 // NewLatencyBased 创建延迟优先负载均衡器
 // 参数：
 //   - backends: 后端配置列表
 //   - healthCheck: 健康检查配置
+//
 // 返回：
 //   - LoadBalancer: 负载均衡器实例
 func NewLatencyBased(backends []*config.Backend, healthCheck *config.HealthCheckConfig) LoadBalancer {

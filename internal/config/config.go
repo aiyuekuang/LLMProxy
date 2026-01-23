@@ -198,16 +198,16 @@ type DiscoveryConfig struct {
 
 // DiscoverySource 发现源配置
 type DiscoverySource struct {
-	Name       string                    `yaml:"name"`                 // 源名称
-	Type       string                    `yaml:"type"`                 // 类型: database / static / consul / kubernetes / etcd / http
-	Enabled    bool                      `yaml:"enabled"`              // 是否启用
-	Database   *DiscoveryDatabaseConfig  `yaml:"database,omitempty"`   // 数据库配置
-	Static     *DiscoveryStaticConfig    `yaml:"static,omitempty"`     // 静态配置
-	Consul     *DiscoveryConsulConfig    `yaml:"consul,omitempty"`     // Consul 配置
-	Kubernetes *DiscoveryK8sConfig       `yaml:"kubernetes,omitempty"` // Kubernetes 配置
-	Etcd       *DiscoveryEtcdConfig      `yaml:"etcd,omitempty"`       // Etcd 配置
-	HTTP       *DiscoveryHTTPConfig      `yaml:"http,omitempty"`       // HTTP 配置
-	Script     *ScriptConfig             `yaml:"script,omitempty"`     // Lua 后处理脚本
+	Name       string                   `yaml:"name"`                 // 源名称
+	Type       string                   `yaml:"type"`                 // 类型: database / static / consul / kubernetes / etcd / http
+	Enabled    bool                     `yaml:"enabled"`              // 是否启用
+	Database   *DiscoveryDatabaseConfig `yaml:"database,omitempty"`   // 数据库配置
+	Static     *DiscoveryStaticConfig   `yaml:"static,omitempty"`     // 静态配置
+	Consul     *DiscoveryConsulConfig   `yaml:"consul,omitempty"`     // Consul 配置
+	Kubernetes *DiscoveryK8sConfig      `yaml:"kubernetes,omitempty"` // Kubernetes 配置
+	Etcd       *DiscoveryEtcdConfig     `yaml:"etcd,omitempty"`       // Etcd 配置
+	HTTP       *DiscoveryHTTPConfig     `yaml:"http,omitempty"`       // HTTP 配置
+	Script     *ScriptConfig            `yaml:"script,omitempty"`     // Lua 后处理脚本
 }
 
 // DiscoveryDatabaseConfig 数据库发现配置
@@ -257,17 +257,18 @@ type DiscoveryHTTPConfig struct {
 
 // UsageConfig 用量上报配置
 type UsageConfig struct {
-	Enabled   bool            `yaml:"enabled"`   // 是否启用
+	Enabled   bool             `yaml:"enabled"`   // 是否启用
 	Reporters []*UsageReporter `yaml:"reporters"` // 上报器列表（可配置多个）
 }
 
 // UsageReporter 单个用量上报器配置
 type UsageReporter struct {
 	Name     string               `yaml:"name"`               // 上报器名称
-	Type     string               `yaml:"type"`               // 类型：webhook / database
+	Type     string               `yaml:"type"`               // 类型：webhook / database / builtin
 	Enabled  bool                 `yaml:"enabled"`            // 是否启用
 	Webhook  *UsageWebhookConfig  `yaml:"webhook,omitempty"`  // Webhook 配置
 	Database *UsageDatabaseConfig `yaml:"database,omitempty"` // 数据库配置
+	Builtin  *UsageBuiltinConfig  `yaml:"builtin,omitempty"`  // 内置 SQLite 配置
 	Script   *ScriptConfig        `yaml:"script,omitempty"`   // Lua 脚本
 }
 
@@ -284,10 +285,12 @@ type UsageWebhookConfig struct {
 type UsageDatabaseConfig struct {
 	Storage string `yaml:"storage"` // 引用 storage.databases[name]
 	Table   string `yaml:"table"`   // 表名
-	
-	// 兼容旧配置
-	Driver string `yaml:"driver"` // 驱动
-	DSN    string `yaml:"dsn"`    // DSN
+}
+
+// UsageBuiltinConfig 内置用量存储配置
+// 使用 admin 模块的 SQLite 数据库存储用量记录
+type UsageBuiltinConfig struct {
+	RetentionDays int `yaml:"retention_days"` // 数据保留天数，0=永久
 }
 
 // ============================================================
@@ -350,12 +353,29 @@ type AuthConfig struct {
 	SkipPaths   []string        `yaml:"skip_paths"`   // 跳过鉴权的路径
 	HeaderNames []string        `yaml:"header_names"` // 自定义认证 Header 名称列表
 	Pipeline    []*AuthProvider `yaml:"pipeline"`     // 鉴权管道配置
+	StatusCodes *StatusCodes    `yaml:"status_codes"` // 状态码配置
+}
+
+// StatusCodeConfig 单个状态码配置
+type StatusCodeConfig struct {
+	Allow    bool   `yaml:"allow"`     // 是否允许通过
+	HttpCode int    `yaml:"http_code"` // HTTP 状态码
+	Message  string `yaml:"message"`   // 错误消息
+}
+
+// StatusCodes 状态码配置（可配置错误消息和 HTTP 状态码）
+type StatusCodes struct {
+	Active        *StatusCodeConfig `yaml:"active"`         // 正常状态
+	Disabled      *StatusCodeConfig `yaml:"disabled"`       // 已禁用
+	Expired       *StatusCodeConfig `yaml:"expired"`        // 已过期
+	QuotaExceeded *StatusCodeConfig `yaml:"quota_exceeded"` // 额度耗尽
+	NotFound      *StatusCodeConfig `yaml:"not_found"`      // 不存在
 }
 
 // AuthProvider 鉴权提供者配置
 type AuthProvider struct {
 	Name     string              `yaml:"name"`               // Provider 名称
-	Type     string              `yaml:"type"`               // Provider 类型: redis / database / webhook / lua / static
+	Type     string              `yaml:"type"`               // Provider 类型: builtin / redis / database / webhook / lua / static
 	Enabled  bool                `yaml:"enabled"`            // 是否启用
 	Redis    *RedisAuthConfig    `yaml:"redis,omitempty"`    // Redis 配置
 	Database *DatabaseAuthConfig `yaml:"database,omitempty"` // 数据库配置
@@ -369,11 +389,6 @@ type AuthProvider struct {
 type RedisAuthConfig struct {
 	Storage    string `yaml:"storage"`     // 引用 storage.caches[name]
 	KeyPattern string `yaml:"key_pattern"` // Key 模式
-
-	// 兼容旧配置（直接连接）
-	Addr     string `yaml:"addr"`     // Redis 地址
-	Password string `yaml:"password"` // 密码
-	DB       int    `yaml:"db"`       // 数据库编号
 }
 
 // DatabaseAuthConfig 数据库鉴权配置
@@ -467,17 +482,20 @@ type LoggingConfig struct {
 
 // RequestLoggingConfig 请求日志配置
 type RequestLoggingConfig struct {
-	Enabled bool          `yaml:"enabled"`
-	Storage string        `yaml:"storage"` // 引用 storage.databases[name] / file / stdout
-	Script  *ScriptConfig `yaml:"script,omitempty"`
-	File    *LogFileConfig `yaml:"file,omitempty"`
+	Enabled     bool           `yaml:"enabled"`
+	Storage     string         `yaml:"storage"`      // 引用 storage.databases[name]
+	Table       string         `yaml:"table"`        // 表名（默认 request_logs）
+	IncludeBody bool           `yaml:"include_body"` // 是否记录请求/响应体
+	Script      *ScriptConfig  `yaml:"script,omitempty"`
+	File        *LogFileConfig `yaml:"file,omitempty"`
 }
 
 // AccessLoggingConfig 访问日志配置
 type AccessLoggingConfig struct {
-	Enabled bool          `yaml:"enabled"`
-	Storage string        `yaml:"storage"` // file / stdout
-	Script  *ScriptConfig `yaml:"script,omitempty"`
+	Enabled bool           `yaml:"enabled"`
+	Format  string         `yaml:"format"` // combined / json（默认 combined）
+	Output  string         `yaml:"output"` // file / stdout
+	Script  *ScriptConfig  `yaml:"script,omitempty"`
 	File    *LogFileConfig `yaml:"file,omitempty"`
 }
 
@@ -525,6 +543,14 @@ type ScriptConfig struct {
 //                    主配置结构
 // ============================================================
 
+// AdminConfig Admin API 配置
+type AdminConfig struct {
+	Enabled bool   `yaml:"enabled"` // 是否启用 Admin API
+	Token   string `yaml:"token"`   // 访问令牌
+	Listen  string `yaml:"listen"`  // 监听地址（可选，默认与主服务同端口）
+	DBPath  string `yaml:"db_path"` // SQLite 数据库路径（默认 ./data/keys.db）
+}
+
 // Config 主配置结构
 type Config struct {
 	Server      *ServerConfig      `yaml:"server"`       // 服务器配置
@@ -533,6 +559,7 @@ type Config struct {
 	Backends    []*Backend         `yaml:"backends"`     // 后端服务列表
 	Discovery   *DiscoveryConfig   `yaml:"discovery"`    // 服务发现配置
 	Auth        *AuthConfig        `yaml:"auth"`         // 鉴权配置
+	Admin       *AdminConfig       `yaml:"admin"`        // Admin API 配置
 	Logging     *LoggingConfig     `yaml:"logging"`      // 请求/访问日志
 	RateLimit   *RateLimitConfig   `yaml:"rate_limit"`   // 限流配置
 	Routing     *RoutingConfig     `yaml:"routing"`      // 路由配置
@@ -559,6 +586,7 @@ func (c *Config) GetListen() string {
 // Load 从文件加载配置
 // 参数：
 //   - path: 配置文件路径
+//
 // 返回：
 //   - *Config: 配置对象
 //   - error: 错误信息
@@ -666,6 +694,32 @@ func Load(path string) (*Config, error) {
 	if cfg.Auth != nil && cfg.Auth.Enabled {
 		if cfg.Auth.Mode == "" {
 			cfg.Auth.Mode = "first_match"
+		}
+		// 状态码配置默认值
+		if cfg.Auth.StatusCodes == nil {
+			cfg.Auth.StatusCodes = &StatusCodes{}
+		}
+		if cfg.Auth.StatusCodes.Active == nil {
+			cfg.Auth.StatusCodes.Active = &StatusCodeConfig{Allow: true}
+		}
+		if cfg.Auth.StatusCodes.Disabled == nil {
+			cfg.Auth.StatusCodes.Disabled = &StatusCodeConfig{Allow: false, HttpCode: 403, Message: "API Key 已被禁用"}
+		}
+		if cfg.Auth.StatusCodes.Expired == nil {
+			cfg.Auth.StatusCodes.Expired = &StatusCodeConfig{Allow: false, HttpCode: 403, Message: "API Key 已过期"}
+		}
+		if cfg.Auth.StatusCodes.QuotaExceeded == nil {
+			cfg.Auth.StatusCodes.QuotaExceeded = &StatusCodeConfig{Allow: false, HttpCode: 429, Message: "额度已用尽，请充值"}
+		}
+		if cfg.Auth.StatusCodes.NotFound == nil {
+			cfg.Auth.StatusCodes.NotFound = &StatusCodeConfig{Allow: false, HttpCode: 401, Message: "无效的 API Key"}
+		}
+	}
+
+	// Admin API 配置默认值
+	if cfg.Admin != nil && cfg.Admin.Enabled {
+		if cfg.Admin.DBPath == "" {
+			cfg.Admin.DBPath = "./data/keys.db"
 		}
 	}
 

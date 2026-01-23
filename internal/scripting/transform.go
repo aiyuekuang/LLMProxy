@@ -13,14 +13,15 @@ type TransformScript struct {
 
 // TransformResult 转换结果
 type TransformResult struct {
-	Body    map[string]interface{} // 转换后的请求体/响应体
-	Headers map[string]string      // 转换后的请求头/响应头
-	StatusCode int                 // 响应状态码（仅响应转换）
+	Body       map[string]interface{} // 转换后的请求体/响应体
+	Headers    map[string]string      // 转换后的请求头/响应头
+	StatusCode int                    // 响应状态码（仅响应转换）
 }
 
 // NewTransformScript 创建转换脚本执行器
 // 参数：
 //   - config: 引擎配置
+//
 // 返回：
 //   - *TransformScript: 转换脚本执行器
 //   - error: 错误信息
@@ -43,6 +44,7 @@ func NewTransformScript(config *EngineConfig) (*TransformScript, error) {
 //   - apiKey: API Key
 //   - requestID: 请求 ID
 //   - backendURL: 目标后端 URL
+//
 // 返回：
 //   - *TransformResult: 转换结果（nil 表示不转换）
 //   - error: 错误信息
@@ -130,6 +132,7 @@ func (t *TransformScript) TransformRequest(
 //   - requestID: 请求 ID
 //   - backendURL: 后端 URL
 //   - latencyMS: 延迟（毫秒）
+//
 // 返回：
 //   - *TransformResult: 转换结果（nil 表示不转换）
 //   - error: 错误信息

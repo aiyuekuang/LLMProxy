@@ -24,16 +24,17 @@ type WebhookProvider struct {
 // 参数：
 //   - name: Provider 名称
 //   - cfg: Webhook 配置
+//
 // 返回：
 //   - Provider: Provider 实例
 //   - error: 错误信息
 func NewWebhookProvider(name string, cfg *WebhookConfig) (Provider, error) {
 	if cfg == nil {
-		return nil, fmt.Errorf("Webhook 配置不能为空")
+		return nil, fmt.Errorf("webhook 配置不能为空")
 	}
 
 	if cfg.URL == "" {
-		return nil, fmt.Errorf("Webhook URL 不能为空")
+		return nil, fmt.Errorf("webhook URL 不能为空")
 	}
 
 	method := cfg.Method
@@ -62,15 +63,16 @@ func NewWebhookProvider(name string, cfg *WebhookConfig) (Provider, error) {
 
 // WebhookRequest Webhook 请求体
 type WebhookRequest struct {
-	APIKey    string            `json:"api_key"`             // API Key
-	Timestamp int64             `json:"timestamp"`           // 请求时间戳
-	RequestInfo *RequestInfo    `json:"request,omitempty"`   // 请求信息
+	APIKey      string       `json:"api_key"`           // API Key
+	Timestamp   int64        `json:"timestamp"`         // 请求时间戳
+	RequestInfo *RequestInfo `json:"request,omitempty"` // 请求信息
 }
 
 // Query 调用 Webhook 验证 API Key
 // 参数：
 //   - ctx: 上下文
 //   - apiKey: API Key 字符串
+//
 // 返回：
 //   - *ProviderResult: 查询结果
 func (w *WebhookProvider) Query(ctx context.Context, apiKey string) *ProviderResult {
@@ -108,10 +110,12 @@ func (w *WebhookProvider) Query(ctx context.Context, apiKey string) *ProviderRes
 	if err != nil {
 		return &ProviderResult{
 			Found: false,
-			Error: fmt.Errorf("Webhook 请求失败: %w", err),
+			Error: fmt.Errorf("webhook 请求失败: %w", err),
 		}
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
 	// 读取响应
 	body, err := io.ReadAll(resp.Body)

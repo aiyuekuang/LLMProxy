@@ -21,67 +21,15 @@ type DatabaseProvider struct {
 	fields    []string // 需要查询的字段
 }
 
-// NewDatabaseProvider 创建数据库 Provider
+// NewDatabaseProviderWithDB 使用已创建的数据库连接创建 Provider
 // 参数：
 //   - name: Provider 名称
+//   - db: 数据库连接
 //   - cfg: 数据库配置
+//
 // 返回：
 //   - Provider: Provider 实例
 //   - error: 错误信息
-func NewDatabaseProvider(name string, cfg *DatabaseConfig) (Provider, error) {
-	if cfg == nil {
-		return nil, fmt.Errorf("数据库配置不能为空")
-	}
-
-	// 兼容旧配置：如果直接配置了连接信息
-	if cfg.Storage == "" {
-		// 验证配置
-		if cfg.Driver == "" {
-			return nil, fmt.Errorf("数据库驱动不能为空")
-		}
-		if cfg.DSN == "" {
-			return nil, fmt.Errorf("数据库 DSN 不能为空")
-		}
-		if cfg.Table == "" {
-			return nil, fmt.Errorf("表名不能为空")
-		}
-		if cfg.KeyColumn == "" {
-			cfg.KeyColumn = "api_key"
-		}
-
-		// 打开数据库连接
-		db, err := sql.Open(cfg.Driver, cfg.DSN)
-		if err != nil {
-			return nil, fmt.Errorf("数据库连接失败: %w", err)
-		}
-
-		// 测试连接
-		if err := db.Ping(); err != nil {
-			db.Close()
-			return nil, fmt.Errorf("数据库 Ping 失败: %w", err)
-		}
-
-		// 设置连接池
-		db.SetMaxOpenConns(10)
-		db.SetMaxIdleConns(5)
-
-		return &DatabaseProvider{
-			BaseProvider: BaseProvider{
-				name:         name,
-				providerType: ProviderTypeDatabase,
-			},
-			db:        db,
-			table:     cfg.Table,
-			keyColumn: cfg.KeyColumn,
-			fields:    cfg.Fields,
-		}, nil
-	}
-
-	// 新配置：需要传入已创建的连接
-	return nil, fmt.Errorf("Database Provider 需要使用 NewDatabaseProviderWithDB 创建")
-}
-
-// NewDatabaseProviderWithDB 使用已创建的数据库连接创建 Provider
 func NewDatabaseProviderWithDB(name string, db interface{}, cfg *DatabaseConfig) (Provider, error) {
 	if cfg == nil {
 		return nil, fmt.Errorf("数据库配置不能为空")
@@ -117,6 +65,7 @@ func NewDatabaseProviderWithDB(name string, db interface{}, cfg *DatabaseConfig)
 // 参数：
 //   - ctx: 上下文
 //   - apiKey: API Key 字符串
+//
 // 返回：
 //   - *ProviderResult: 查询结果
 func (d *DatabaseProvider) Query(ctx context.Context, apiKey string) *ProviderResult {
@@ -137,7 +86,9 @@ func (d *DatabaseProvider) Query(ctx context.Context, apiKey string) *ProviderRe
 			Error: fmt.Errorf("数据库查询失败: %w", err),
 		}
 	}
-	defer rows.Close()
+	defer func() {
+		_ = rows.Close()
+	}()
 
 	// 获取列信息
 	columns, err := rows.Columns()
@@ -186,10 +137,9 @@ func (d *DatabaseProvider) Query(ctx context.Context, apiKey string) *ProviderRe
 	}
 }
 
-// Close 关闭数据库连接
+// Close 关闭 Provider
+// 注意：不关闭数据库连接，因为连接由 StorageManager 统一管理
 func (d *DatabaseProvider) Close() error {
-	if d.db != nil {
-		return d.db.Close()
-	}
+	// 数据库连接由 StorageManager 管理，这里不关闭
 	return nil
 }

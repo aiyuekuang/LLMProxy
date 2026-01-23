@@ -21,6 +21,7 @@ services:
       - "18000:8000"
     volumes:
       - ./config-test.yaml:/home/llmproxy/config.yaml:ro
+      - llmproxy-data:/home/llmproxy/data
     environment:
       - TZ=Asia/Shanghai
     depends_on:
@@ -33,3 +34,6 @@ services:
       retries: 3
       start_period: 10s
     restart: unless-stopped
+
+volumes:
+  llmproxy-data:

@@ -11,8 +11,8 @@ func setupSandbox(vm *lua.LState) {
 	// 禁用危险的标准库函数
 	disableDangerousFunctions(vm)
 
-	// 限制递归深度
-	vm.SetMaxStackSize(100)
+	// 注意：gopher-lua 的栈大小限制需要在创建 LState 时通过 Options 设置
+	// 这里我们只禁用危险函数作为沙箱保护
 }
 
 // disableDangerousFunctions 禁用危险函数

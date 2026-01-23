@@ -21,6 +21,7 @@ type RateLimitResult struct {
 // NewRateLimitScript 创建限流脚本执行器
 // 参数：
 //   - config: 引擎配置
+//
 // 返回：
 //   - *RateLimitScript: 限流脚本执行器
 //   - error: 错误信息
@@ -44,6 +45,7 @@ func NewRateLimitScript(config *EngineConfig) (*RateLimitScript, error) {
 //   - keyInfo: Key 信息
 //   - rateLimitStatus: 限流状态
 //   - currentTime: 当前时间信息
+//
 // 返回：
 //   - *RateLimitResult: 限流结果（nil 表示使用标准限流）
 //   - error: 错误信息
@@ -130,6 +132,7 @@ type UsageScript struct {
 // NewUsageScript 创建用量计算脚本执行器
 // 参数：
 //   - config: 引擎配置
+//
 // 返回：
 //   - *UsageScript: 用量计算脚本执行器
 //   - error: 错误信息
@@ -153,6 +156,7 @@ func NewUsageScript(config *EngineConfig) (*UsageScript, error) {
 //   - usage: 原始用量数据
 //   - responseBody: 响应体
 //   - metadata: 元数据
+//
 // 返回：
 //   - map[string]interface{}: 修改后的用量数据（nil 表示不修改）
 //   - error: 错误信息
@@ -230,6 +234,7 @@ type ErrorHandlerResult struct {
 // NewErrorHandlerScript 创建错误处理脚本执行器
 // 参数：
 //   - config: 引擎配置
+//
 // 返回：
 //   - *ErrorHandlerScript: 错误处理脚本执行器
 //   - error: 错误信息
@@ -250,6 +255,7 @@ func NewErrorHandlerScript(config *EngineConfig) (*ErrorHandlerScript, error) {
 //   - userID: 用户 ID
 //   - requestID: 请求 ID
 //   - errorInfo: 错误信息
+//
 // 返回：
 //   - *ErrorHandlerResult: 错误处理结果（nil 表示使用默认错误响应）
 //   - error: 错误信息

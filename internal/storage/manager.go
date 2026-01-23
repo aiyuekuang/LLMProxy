@@ -11,14 +11,14 @@ import (
 
 	_ "github.com/go-sql-driver/mysql"
 	_ "github.com/lib/pq"
-	_ "modernc.org/sqlite"
 	"github.com/redis/go-redis/v9"
+	_ "modernc.org/sqlite"
 )
 
 // Manager 存储管理器
 // 负责管理数据库和 Redis 连接池
 type Manager struct {
-	databases map[string]*sql.DB    // 数据库连接池
+	databases map[string]*sql.DB       // 数据库连接池
 	caches    map[string]*redis.Client // Redis 连接池
 	mu        sync.RWMutex
 }
@@ -93,7 +93,7 @@ func (m *Manager) createDatabase(cfg *config.DatabaseConnection) (*sql.DB, error
 
 	// 测试连接
 	if err := db.Ping(); err != nil {
-		db.Close()
+		_ = db.Close() // 忽略关闭错误，优先返回 Ping 错误
 		return nil, err
 	}
 
@@ -123,7 +123,7 @@ func (m *Manager) createCache(cfg *config.CacheConnection) (*redis.Client, error
 	// 测试连接
 	ctx := context.Background()
 	if err := client.Ping(ctx).Err(); err != nil {
-		client.Close()
+		_ = client.Close() // 忽略关闭错误，优先返回 Ping 错误
 		return nil, err
 	}
 
@@ -161,6 +161,9 @@ func (m *Manager) Close() error {
 
 	// 关闭缓存连接
 	for name, cache := range m.caches {
+		if cache == nil {
+			continue // 内存模式无需关闭
+		}
 		if err := cache.Close(); err != nil {
 			log.Printf("关闭缓存 [%s] 失败: %v", name, err)
 			lastErr = err

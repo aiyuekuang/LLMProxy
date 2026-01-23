@@ -61,6 +61,8 @@ Access: LLMProxy `:8000` | Prometheus `:9090` | Grafana `:3000` (admin/admin)
 
 **Supported Architectures**: `linux/amd64`, `linux/arm64`
 
+> 📖 **[Complete Configuration Reference](docs/configuration.md)** - All config options, Admin API, Auth Pipeline, Usage Reporting
+
 ---
 
 ## Core Features
@@ -114,18 +116,21 @@ backends:
   - url: "http://vllm-coder:8000"
     weight: 10
 
+admin:
+  enabled: true
+  token: "your-admin-token"
+
 auth:
   enabled: true
-  storage: "file"
   header_names: ["Authorization", "X-API-Key"]
-
-api_keys:
-  - key: "sk-llmproxy-dev-001"
-    name: "Dev Team"
-    total_quota: 1000000
-    allowed_ips: ["10.0.0.0/8"]
+  skip_paths: ["/health", "/metrics"]
+  pipeline:
+    - name: builtin_auth
+      type: builtin
+      enabled: true
 
 rate_limit:
+  enabled: true
   per_key:
     requests_per_minute: 60
     max_concurrent: 3
@@ -140,34 +145,37 @@ For detailed configuration, see: [OpenCode Integration Guide](docs/opencode-inte
 ## Configuration
 
 ```yaml
-# Listen address
-listen: ":8000"
+server:
+  listen: ":8000"
 
-# Backend server list
 backends:
   - url: "http://vllm:8000"
     weight: 5
   - url: "http://tgi:8081"
     weight: 3
 
-# Usage reporting (supports multiple reporters)
-usage_hook:
+# Admin API (for API Key management)
+admin:
+  enabled: true
+  token: "your-secure-admin-token"
+  db_path: "./data/keys.db"
+
+# Usage reporting
+usage:
   enabled: true
   reporters:
-    - name: "billing"
-      type: "webhook"
+    - name: local
+      type: builtin
       enabled: true
-      url: "https://your-billing.com/llm-usage"
-      timeout: 3s
-    - name: "database"
-      type: "database"
+    - name: billing
+      type: webhook
       enabled: true
-      database:
-        driver: "mysql"
-        dsn: "user:pass@tcp(localhost:3306)/llmproxy"
+      webhook:
+        url: "https://your-billing.com/llm-usage"
+        timeout: 3s
 
-# Health check configuration
 health_check:
+  enabled: true
   interval: 10s
   path: /health
 ```
@@ -234,6 +242,28 @@ LLMProxy exposes Prometheus metrics at `/metrics`:
 | `llmproxy_webhook_success_total` | Counter | Successful webhook deliveries |
 | `llmproxy_webhook_failure_total` | Counter | Failed webhook deliveries |
 | `llmproxy_usage_tokens_total` | Counter | Token usage (labels: type=prompt/completion) |
+
+## Admin API
+
+LLMProxy provides a built-in Admin API for managing API Keys:
+
+| Endpoint | Description |
+|----------|-------------|
+| `POST /admin/keys/create` | Create API Key |
+| `POST /admin/keys/update` | Update API Key |
+| `POST /admin/keys/delete` | Delete API Key |
+| `POST /admin/keys/get` | Get API Key |
+| `POST /admin/keys/list` | List API Keys |
+| `POST /admin/keys/sync` | Batch sync API Keys |
+
+Requires `X-Admin-Token` header for authentication. Enable in config:
+
+```yaml
+admin:
+  enabled: true
+  token: "your-secure-admin-token"
+  db_path: "./data/keys.db"  # SQLite database path
+```
 
 ## API Usage Examples
 
@@ -302,13 +332,34 @@ llmproxy/
 ├── cmd/
 │   └── main.go                 # Entry point
 ├── internal/
+│   ├── admin/                  # Admin API module
+│   │   ├── keystore.go         # API Key storage (SQLite)
+│   │   ├── server.go           # Admin API server
+│   │   └── usage.go            # Usage storage
+│   ├── auth/                   # Authentication module
+│   │   ├── middleware.go       # Auth middleware (legacy)
+│   │   └── pipeline/           # Auth pipeline (new)
+│   │       ├── provider_*.go   # Various providers
+│   │       ├── executor.go     # Pipeline executor
+│   │       └── middleware.go   # Pipeline middleware
 │   ├── config/                 # Config parsing
 │   │   └── config.go
+│   ├── lb/                     # Load balancer
+│   │   ├── round_robin.go
+│   │   ├── least_connections.go
+│   │   └── latency_based.go
 │   ├── proxy/                  # Core proxy engine
 │   │   ├── handler.go          # Request handling
-│   │   └── usage_hook.go       # Webhook reporting
-│   ├── lb/                     # Load balancer
-│   │   └── roundrobin.go
+│   │   └── usage_reporter.go   # Usage reporting
+│   ├── ratelimit/              # Rate limiting
+│   │   ├── memory.go           # In-memory limiter
+│   │   └── redis_limiter.go    # Redis limiter
+│   ├── routing/                # Intelligent routing
+│   │   └── router.go
+│   ├── storage/                # Storage abstraction
+│   │   └── manager.go
+│   ├── types/                  # Common types
+│   │   └── status.go
 │   └── metrics/                # Prometheus metrics
 │       └── metrics.go
 ├── deployments/
@@ -341,7 +392,7 @@ Visit `http://localhost:8000/metrics` to see Prometheus metrics.
 
 ### 4. What load balancing strategies are supported?
 
-Currently supports Weighted Round Robin. Additional strategies (least connections, etc.) can be added.
+Supports round_robin, least_connections, and latency_based strategies.
 
 ## 📚 Documentation
 

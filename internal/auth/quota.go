@@ -7,6 +7,7 @@ import (
 // CheckQuota 检查额度是否充足
 // 参数：
 //   - key: API Key
+//
 // 返回：
 //   - bool: 是否充足
 func CheckQuota(key *APIKey) bool {
@@ -14,7 +15,7 @@ func CheckQuota(key *APIKey) bool {
 	if key.TotalQuota <= 0 {
 		return true
 	}
-	
+
 	return key.UsedQuota < key.TotalQuota
 }
 
@@ -30,16 +31,17 @@ func DeductQuota(key *APIKey, tokens int64) {
 // ResetQuotaIfNeeded 按周期重置额度
 // 参数：
 //   - key: API Key
+//
 // 返回：
 //   - bool: 是否重置了
 func ResetQuotaIfNeeded(key *APIKey) bool {
 	if key.QuotaResetPeriod == "never" || key.QuotaResetPeriod == "" {
 		return false
 	}
-	
+
 	now := time.Now()
 	var shouldReset bool
-	
+
 	switch key.QuotaResetPeriod {
 	case "daily":
 		// 检查是否跨天
@@ -51,14 +53,13 @@ func ResetQuotaIfNeeded(key *APIKey) bool {
 		// 检查是否跨月
 		shouldReset = now.Month() != key.LastResetAt.Month() || now.Year() != key.LastResetAt.Year()
 	}
-	
+
 	if shouldReset {
 		key.UsedQuota = 0
 		key.LastResetAt = now
 		key.UpdatedAt = now
 		return true
 	}
-	
+
 	return false
 }
-

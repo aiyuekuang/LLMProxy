@@ -1,44 +1,54 @@
-listen: ":8000"
+# LLMProxy 鉴权管道测试配置
+
+server:
+  listen: ":8000"
 
 backends:
-  - url: "http://httpbin.org"
+  - name: httpbin
+    url: "http://httpbin.org"
     weight: 1
 
 auth:
   enabled: true
-  header_names: ["Authorization", "X-API-Key"]
-  mode: "first_match"
-  
+  mode: first_match
+  header_names:
+    - Authorization
+    - X-API-Key
+  skip_paths:
+    - /health
+    - /metrics
   pipeline:
-    # 配置文件方式
-    - name: "config_file"
-      type: "file"
+    # 静态配置方式
+    - name: static_auth
+      type: static
       enabled: true
-      lua_script: |
-        if data.status ~= "active" then
-          return {allow = false, message = "Key 已禁用"}
-        end
-        if tonumber(data.used_quota or 0) >= tonumber(data.total_quota or 0) and tonumber(data.total_quota or 0) > 0 then
-          return {allow = false, message = "额度不足"}
-        end
-        return {allow = true, metadata = {user_id = data.user_id}}
+      static:
+        keys:
+          - key: "sk-test-123"
+            name: "测试 Key"
+            user_id: "test_user"
+            status: "active"
+            total_quota: 100000
+            used_quota: 0
+          - key: "sk-disabled"
+            name: "禁用 Key"
+            user_id: "disabled_user"
+            status: "disabled"
+          - key: "sk-no-quota"
+            name: "无额度 Key"
+            user_id: "no_quota_user"
+            status: "active"
+            total_quota: 100
+            used_quota: 100
 
-api_keys:
-  - key: "sk-test-123"
-    name: "测试 Key"
-    user_id: "test_user"
-    status: "active"
-    total_quota: 100000
-    used_quota: 0
-  
-  - key: "sk-disabled"
-    name: "禁用 Key"
-    user_id: "disabled_user"
-    status: "disabled"
-  
-  - key: "sk-no-quota"
-    name: "无额度 Key"
-    user_id: "no_quota_user"
-    status: "active"
-    total_quota: 100
-    used_quota: 100
+routing:
+  enabled: true
+  load_balance: round_robin
+  timeout: 60s
+
+health_check:
+  enabled: false
+
+metrics:
+  enabled: true
+  path: /metrics

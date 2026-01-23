@@ -18,6 +18,7 @@ type RedisRateLimiter struct {
 // 参数：
 //   - client: Redis 客户端
 //   - prefix: Key 前缀（可选，默认 "ratelimit:"）
+//
 // 返回：
 //   - RateLimiter: 限流器实例
 func NewRedisRateLimiter(client *redis.Client, prefix string) RateLimiter {
@@ -33,6 +34,7 @@ func NewRedisRateLimiter(client *redis.Client, prefix string) RateLimiter {
 // Allow 检查是否允许请求（消耗 1 个令牌）
 // 参数：
 //   - key: 限流 key
+//
 // 返回：
 //   - bool: 是否允许
 //   - error: 错误信息
@@ -85,6 +87,7 @@ return {allowed, math.floor(new_tokens)}
 //   - maxTokens: 最大令牌数（桶容量）
 //   - rate: 令牌生成速率（每秒）
 //   - n: 请求消耗的令牌数
+//
 // 返回：
 //   - bool: 是否允许
 //   - int64: 剩余令牌数
@@ -97,12 +100,12 @@ func (r *RedisRateLimiter) AllowN(key string, maxTokens, rate int64, n int64) (b
 
 	result, err := r.client.Eval(ctx, tokenBucketScript, []string{fullKey}, maxTokens, rate, now, n).Result()
 	if err != nil {
-		return false, 0, fmt.Errorf("Redis 限流脚本执行失败: %w", err)
+		return false, 0, fmt.Errorf("redis 限流脚本执行失败: %w", err)
 	}
 
 	values, ok := result.([]interface{})
 	if !ok || len(values) != 2 {
-		return false, 0, fmt.Errorf("Redis 限流脚本返回值格式错误")
+		return false, 0, fmt.Errorf("redis 限流脚本返回值格式错误")
 	}
 
 	allowed := values[0].(int64) == 1
@@ -114,6 +117,7 @@ func (r *RedisRateLimiter) AllowN(key string, maxTokens, rate int64, n int64) (b
 // Remaining 获取剩余配额
 // 参数：
 //   - key: 限流 key
+//
 // 返回：
 //   - int64: 剩余配额
 //   - error: 错误信息
@@ -135,6 +139,7 @@ func (r *RedisRateLimiter) Remaining(key string) (int64, error) {
 // IncrementConcurrent 增加并发计数
 // 参数：
 //   - key: 限流 key
+//
 // 返回：
 //   - int64: 当前并发数
 //   - error: 错误信息
@@ -156,6 +161,7 @@ func (r *RedisRateLimiter) IncrementConcurrent(key string) (int64, error) {
 // DecrementConcurrent 减少并发计数
 // 参数：
 //   - key: 限流 key
+//
 // 返回：
 //   - error: 错误信息
 func (r *RedisRateLimiter) DecrementConcurrent(key string) error {

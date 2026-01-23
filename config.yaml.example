@@ -7,7 +7,7 @@
 server:
   listen: ":8000"
   read_timeout: 30s
-  write_timeout: 60s
+  # write_timeout: 60s      # 注意：流式响应场景下此配置被忽略（硬编码为 0）
   idle_timeout: 120s
 
 # ============================================================
@@ -48,28 +48,61 @@ storage:
 # ============================================================
 backends:
   - name: vllm-server
-    url: "http://localhost:8080"
+    url: "http://localhost:11434"
     weight: 5
   - name: tgi-server
-    url: "http://localhost:8081"
+    url: "http://localhost:11435"
     weight: 3
+
+# ============================================================
+#                    Admin API 配置
+# ============================================================
+admin:
+  enabled: true
+  token: "your-secure-admin-token"   # 访问 Admin API 需要的 Token
+  listen: ""                         # Admin API 监听地址（留空则挂载到主服务器 :8000）
+  db_path: "./data/keys.db"          # SQLite 数据库路径
 
 # ============================================================
 #                    鉴权配置
 # ============================================================
 auth:
-  enabled: false
+  enabled: true
   mode: first_match
   header_names:
     - Authorization
     - X-API-Key
+  # 跳过鉴权的路径（建议配置，否则 /health 等也需要认证）
+  skip_paths:
+    - /health
+    - /metrics
+  # 状态码配置（可选，有默认值）
+  # status_codes:
+  #   disabled:
+  #     http_code: 403
+  #     message: "API Key 已被禁用"
+  #   expired:
+  #     http_code: 403
+  #     message: "API Key 已过期"
+  #   quota_exceeded:
+  #     http_code: 429
+  #     message: "额度已用尽"
+  #   not_found:
+  #     http_code: 401
+  #     message: "无效的 API Key"
   pipeline:
-    - name: redis_auth
-      type: redis
+    # 使用内置 SQLite 存储
+    # 注意：builtin 类型依赖 admin 模块，必须同时启用 admin.enabled: true
+    - name: builtin_auth
+      type: builtin
       enabled: true
-      redis:
-        storage: default
-        key_pattern: "llmproxy:key:{api_key}"
+    # 或者使用 Redis
+    # - name: redis_auth
+    #   type: redis
+    #   enabled: true
+    #   redis:
+    #     storage: default
+    #     key_pattern: "llmproxy:key:{api_key}"
 
 # ============================================================
 #                    路由配置
@@ -90,7 +123,7 @@ routing:
 rate_limit:
   enabled: false
   storage: memory              # memory / redis
-  redis: default               # 引用 storage.caches 中的连接
+  redis: default               # 引用 storage.caches 中的连接（仅当 storage: redis 时生效）
   global:
     enabled: true
     requests_per_second: 100
@@ -120,12 +153,81 @@ metrics:
 #                    用量上报配置
 # ============================================================
 usage:
-  enabled: false
+  enabled: true
   reporters:
-    - name: webhook_reporter
-      type: webhook
+    # 内置 SQLite 存储
+    # 注意：builtin 类型依赖 admin 模块，必须同时启用 admin.enabled: true
+    - name: local
+      type: builtin
       enabled: true
-      webhook:
-        url: "https://your-billing.com/llm-usage"
-        timeout: 3s
-        retry: 3
+      builtin:
+        retention_days: 30           # 数据保留天数，0=永久
+    # Webhook 上报（可选）
+    # - name: billing
+    #   type: webhook
+    #   enabled: true
+    #   webhook:
+    #     url: "https://your-billing.com/llm-usage"
+    #     timeout: 3s
+    #     retry: 3
+
+# ============================================================
+#                    请求/访问日志配置
+# ============================================================
+logging:
+  enabled: false
+  # 请求日志（详细记录每个请求，写入数据库）
+  request:
+    enabled: false
+    storage: default               # 引用 storage.databases 中的连接
+    table: request_logs            # 表名
+    include_body: false            # 是否记录请求/响应体
+  # 访问日志（类似 Nginx 访问日志，写入文件）
+  access:
+    enabled: false
+    format: combined               # combined / json
+    output: file                   # file / stdout
+    file:
+      path: ./logs/access.log      # 日志文件路径
+      max_size_mb: 100             # 单个文件最大大小 (MB)
+      max_backups: 7               # 保留文件数量
+
+# ============================================================
+#                    生命周期钩子配置
+# ============================================================
+hooks:
+  enabled: false
+  # 请求钩子（读取请求体后，发送到后端前）
+  # on_request:
+  #   enabled: true
+  #   timeout: 100ms
+  #   script: |
+  #     -- 可用变量: request (method, path, client_ip, headers, body, api_key, user_id)
+  #     -- 返回: { continue = true/false, error = "...", headers = {}, metadata = {} }
+  #     if request.path == "/v1/completions" then
+  #       return { continue = false, error = "不支持此端点" }
+  #     end
+  #     return { continue = true }
+  # 响应钩子（收到后端响应后，返回客户端前）
+  # on_response:
+  #   enabled: true
+  #   timeout: 100ms
+  #   script: |
+  #     -- 可用变量: request, response (status_code, headers, body, latency_ms, backend_url)
+  #     log("Response status: " .. response.status_code)
+  #     return { continue = true }
+  # 错误钩子（发生错误时）
+  # on_error:
+  #   enabled: true
+  #   timeout: 100ms
+  #   script: |
+  #     -- 可用变量: request, error_message
+  #     log("Error: " .. error_message)
+  #     return { continue = true }
+  # 完成钩子（请求完成后，异步执行）
+  # on_complete:
+  #   enabled: true
+  #   timeout: 100ms
+  #   script: |
+  #     -- 可用变量: request, response
+  #     log("Request completed: " .. request.path)

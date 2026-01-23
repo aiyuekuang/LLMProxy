@@ -25,13 +25,13 @@ func NewLuaProvider(name, script, scriptFile string) (*LuaProvider, error) {
 
 	// 验证脚本配置
 	if script == "" && scriptFile == "" {
-		return nil, fmt.Errorf("Lua Provider 需要 script 或 script_file 配置")
+		return nil, fmt.Errorf("lua provider 需要 script 或 script_file 配置")
 	}
 
 	// 如果是文件，检查文件是否存在
 	if scriptFile != "" {
 		if _, err := os.Stat(scriptFile); os.IsNotExist(err) {
-			return nil, fmt.Errorf("Lua 脚本文件不存在: %s", scriptFile)
+			return nil, fmt.Errorf("lua 脚本文件不存在: %s", scriptFile)
 		}
 	}
 

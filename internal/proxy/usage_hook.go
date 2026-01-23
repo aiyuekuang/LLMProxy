@@ -25,30 +25,30 @@ var webhookClient = &http.Client{
 
 // UsageRecord 用量记录
 type UsageRecord struct {
-	RequestID   string    `json:"request_id"`        // 请求 ID
-	Timestamp   time.Time `json:"timestamp"`         // 时间戳
-	UserID      string    `json:"user_id,omitempty"` // 用户 ID
-	APIKey      string    `json:"api_key,omitempty"` // API Key
-	
+	RequestID string    `json:"request_id"`        // 请求 ID
+	Timestamp time.Time `json:"timestamp"`         // 时间戳
+	UserID    string    `json:"user_id,omitempty"` // 用户 ID
+	APIKey    string    `json:"api_key,omitempty"` // API Key
+
 	// 完整的请求参数（不解析，完整透传）
 	RequestBody map[string]interface{} `json:"request_body"` // 用户的完整请求体
-	
+
 	// 用量信息（从响应中提取）
-	Usage       *UsageInfo `json:"usage,omitempty"`   // 用量信息
-	
+	Usage *UsageInfo `json:"usage,omitempty"` // 用量信息
+
 	// 元数据
-	Method      string `json:"method"`               // HTTP 方法
-	Path        string `json:"path"`                 // 请求路径
-	BackendURL  string `json:"backend_url"`          // 后端 URL
-	StatusCode  int    `json:"status_code"`          // 响应状态码
-	LatencyMs   int64  `json:"latency_ms"`           // 延迟（毫秒）
+	Method     string `json:"method"`      // HTTP 方法
+	Path       string `json:"path"`        // 请求路径
+	BackendURL string `json:"backend_url"` // 后端 URL
+	StatusCode int    `json:"status_code"` // 响应状态码
+	LatencyMs  int64  `json:"latency_ms"`  // 延迟（毫秒）
 }
 
 // UsageInfo 用量信息
 type UsageInfo struct {
-	PromptTokens     int `json:"prompt_tokens"`      // 输入 token 数
-	CompletionTokens int `json:"completion_tokens"`  // 输出 token 数
-	TotalTokens      int `json:"total_tokens"`       // 总 token 数
+	PromptTokens     int `json:"prompt_tokens"`     // 输入 token 数
+	CompletionTokens int `json:"completion_tokens"` // 输出 token 数
+	TotalTokens      int `json:"total_tokens"`      // 总 token 数
 }
 
 // OpenAIResponse OpenAI 标准响应格式
@@ -73,6 +73,7 @@ type OpenAIResponse struct {
 //   - endpoint: 请求端点
 //   - statusCode: 响应状态码
 //   - latencyMs: 请求延迟（毫秒）
+//
 // 返回：
 //   - *UsageRecord: 用量记录，如果无法提取则返回 nil
 func collectUsage(reqBody []byte, respBody []byte, isStream bool, backendURL, endpoint string, statusCode int, latencyMs int64) *UsageRecord {
@@ -177,6 +178,8 @@ func SendUsage(cfg *config.UsageConfig, usage *UsageRecord) {
 			SendUsageToDatabaseByName(reporter.Name, usage)
 		case "webhook":
 			sendUsageToWebhook(reporter, usage)
+		case "builtin":
+			SendUsageToBuiltin(usage)
 		default:
 			log.Printf("未知的用量上报类型: %s", reporter.Type)
 		}
@@ -234,6 +237,7 @@ func sendUsageToWebhook(reporter *config.UsageReporter, usage *UsageRecord) {
 //   - url: Webhook URL
 //   - timeout: 超时时间
 //   - data: 请求体数据
+//
 // 返回：
 //   - bool: 是否成功
 func sendWebhookOnce(url string, timeout time.Duration, data []byte) bool {
@@ -253,7 +257,9 @@ func sendWebhookOnce(url string, timeout time.Duration, data []byte) bool {
 		log.Printf("Webhook 请求失败: %v", err)
 		return false
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
 	// 读取响应体（用于日志）
 	body, _ := io.ReadAll(resp.Body)

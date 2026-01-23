@@ -1,4 +1,5 @@
 # LLMProxy 本地 Docker 测试配置
+# 测试所有新配置功能：admin, auth.builtin, usage.builtin, rate_limit.redis
 
 server:
   listen: ":8000"
@@ -6,7 +7,7 @@ server:
   idle_timeout: 120s
 
 log:
-  level: info
+  level: debug
   format: json
   output: stdout
 
@@ -26,6 +27,29 @@ backends:
   - name: httpbin
     url: "https://httpbin.org"
     weight: 1
+
+# Admin API 配置
+admin:
+  enabled: true
+  token: "test-admin-token"
+  listen: ""
+  db_path: "/home/llmproxy/data/keys.db"
+
+# 鉴权配置（测试 builtin 类型）
+auth:
+  enabled: true
+  mode: first_match
+  header_names:
+    - Authorization
+    - X-API-Key
+  skip_paths:
+    - /health
+    - /metrics
+    - /admin
+  pipeline:
+    - name: builtin_auth
+      type: builtin
+      enabled: true
 
 # 路由配置
 routing:
@@ -57,6 +81,12 @@ metrics:
   enabled: true
   path: /metrics
 
-# 用量上报（测试时禁用）
+# 用量上报（测试 builtin 类型）
 usage:
-  enabled: false
+  enabled: true
+  reporters:
+    - name: local
+      type: builtin
+      enabled: true
+      builtin:
+        retention_days: 7

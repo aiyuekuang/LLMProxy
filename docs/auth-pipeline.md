@@ -188,6 +188,54 @@ CREATE TABLE api_keys (
 }
 ```
 
+### 5. Builtin（内置 SQLite 存储）
+
+使用 Admin API 管理的 SQLite 数据库，**需要同时启用 `admin.enabled: true`**。
+
+```yaml
+- name: "builtin_auth"
+  type: "builtin"
+  enabled: true
+```
+
+**特点**：
+- 无需外部数据库依赖
+- 通过 Admin API 管理 Key（创建/更新/删除/同步）
+- 数据持久化到本地 SQLite
+- 适合单机部署或开发环境
+
+**返回的数据格式**：
+
+```lua
+-- data 包含以下字段（如果存在）：
+data.key        -- API Key
+data.status     -- 状态：0=active, 1=disabled, 2=quota_exceeded, 3=expired
+data.name       -- 名称/备注
+data.user_id    -- 用户 ID
+data.starts_at  -- 生效时间（Unix 时间戳）
+data.expires_at -- 过期时间（Unix 时间戳）
+data.created_at -- 创建时间（Unix 时间戳）
+data.updated_at -- 更新时间（Unix 时间戳）
+```
+
+**配合 Admin API 使用**：
+
+```yaml
+admin:
+  enabled: true
+  token: "your-secure-admin-token"
+  db_path: "./data/keys.db"
+
+auth:
+  enabled: true
+  header_names: ["Authorization", "X-API-Key"]
+  mode: "first_match"
+  pipeline:
+    - name: "builtin_auth"
+      type: "builtin"
+      enabled: true
+```
+
 ## Lua 脚本
 
 每个 Provider 可以配置 Lua 脚本来自定义决策逻辑。

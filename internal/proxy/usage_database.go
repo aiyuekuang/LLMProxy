@@ -7,7 +7,6 @@ import (
 	"log"
 	"sync"
 
-	"llmproxy/internal/config"
 	"llmproxy/internal/metrics"
 
 	_ "github.com/go-sql-driver/mysql"
@@ -27,58 +26,16 @@ type UsageDBWriter struct {
 var usageDBWriters = make(map[string]*UsageDBWriter)
 var usageDBMutex sync.RWMutex
 
-// InitUsageDatabase 初始化用量数据库
+// InitUsageDatabaseWithConnection 使用已创建的数据库连接初始化用量数据库
 // 参数：
 //   - name: 上报器名称
-//   - cfg: 数据库配置
+//   - db: 数据库连接
+//   - driver: 数据库驱动（mysql/postgres/sqlite）
+//   - table: 表名
+//
 // 返回：
 //   - error: 错误信息
-func InitUsageDatabase(name string, cfg *config.UsageDatabaseConfig) error {
-	if cfg == nil {
-		return fmt.Errorf("数据库配置不能为空")
-	}
-
-	// 打开数据库连接
-	db, err := sql.Open(cfg.Driver, cfg.DSN)
-	if err != nil {
-		return fmt.Errorf("数据库连接失败: %w", err)
-	}
-
-	// 测试连接
-	if err := db.Ping(); err != nil {
-		db.Close()
-		return fmt.Errorf("数据库 Ping 失败: %w", err)
-	}
-
-	// 设置连接池
-	db.SetMaxOpenConns(10)
-	db.SetMaxIdleConns(5)
-
-	table := cfg.Table
-	if table == "" {
-		table = "usage_records"
-	}
-
-	// 自动创建表（如果不存在）
-	if err := createUsageTable(db, cfg.Driver, table); err != nil {
-		log.Printf("警告: 创建用量表失败: %v（请手动创建）", err)
-	}
-
-	// 存储到全局映射
-	usageDBMutex.Lock()
-	usageDBWriters[name] = &UsageDBWriter{
-		name:  name,
-		db:    db,
-		table: table,
-	}
-	usageDBMutex.Unlock()
-
-	log.Printf("用量数据库 [%s] 已初始化: %s, 表: %s", name, cfg.Driver, table)
-	return nil
-}
-
-// InitUsageDatabaseWithConnection 使用已创建的数据库连接初始化用量数据库
-func InitUsageDatabaseWithConnection(name string, db *sql.DB, table string) error {
+func InitUsageDatabaseWithConnection(name string, db *sql.DB, driver, table string) error {
 	if db == nil {
 		return fmt.Errorf("数据库连接不能为空")
 	}
@@ -86,9 +43,12 @@ func InitUsageDatabaseWithConnection(name string, db *sql.DB, table string) erro
 	if table == "" {
 		table = "usage_records"
 	}
+	if driver == "" {
+		driver = "mysql"
+	}
 
 	// 自动创建表（如果不存在）
-	if err := createUsageTable(db, "mysql", table); err != nil {
+	if err := createUsageTable(db, driver, table); err != nil {
 		log.Printf("警告: 创建用量表失败: %v（请手动创建）", err)
 	}
 
@@ -101,7 +61,7 @@ func InitUsageDatabaseWithConnection(name string, db *sql.DB, table string) erro
 	}
 	usageDBMutex.Unlock()
 
-	log.Printf("用量数据库 [%s] 已初始化: 表: %s", name, table)
+	log.Printf("用量数据库 [%s] 已初始化: %s, 表: %s", name, driver, table)
 	return nil
 }
 
@@ -271,8 +231,11 @@ func CloseAllUsageDatabases() {
 
 	for name, writer := range usageDBWriters {
 		if writer != nil && writer.db != nil {
-			writer.db.Close()
-			log.Printf("[%s] 用量数据库连接已关闭", name)
+			if err := writer.db.Close(); err != nil {
+				log.Printf("[%s] 关闭用量数据库连接失败: %v", name, err)
+			} else {
+				log.Printf("[%s] 用量数据库连接已关闭", name)
+			}
 		}
 	}
 	usageDBWriters = make(map[string]*UsageDBWriter)

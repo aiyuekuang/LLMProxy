@@ -7,9 +7,9 @@ import (
 	"net/http"
 	"time"
 
-	"llmproxy/internal/database"
 	"llmproxy/internal/auth"
 	"llmproxy/internal/config"
+	"llmproxy/internal/database"
 	"llmproxy/internal/lb"
 	"llmproxy/internal/metrics"
 	"llmproxy/internal/ratelimit"
@@ -50,7 +50,9 @@ func NewDatabaseHandler(
 			http.Error(w, "Bad request", http.StatusBadRequest)
 			return
 		}
-		defer r.Body.Close()
+		defer func() {
+			_ = r.Body.Close()
+		}()
 
 		var modelReq ModelRequest
 		if err := json.Unmarshal(bodyBytes, &modelReq); err != nil {
@@ -88,7 +90,9 @@ func NewDatabaseHandler(
 			}
 			return
 		}
-		defer resp.Body.Close()
+		defer func() {
+			_ = resp.Body.Close()
+		}()
 
 		log.Printf("请求转发到后端: %s, model=%s, stream=%v", backend.URL, model, modelReq.Stream)
 
@@ -105,11 +109,15 @@ func NewDatabaseHandler(
 			w.Header().Set("Cache-Control", "no-cache")
 			w.Header().Set("Connection", "keep-alive")
 			w.WriteHeader(resp.StatusCode)
-			w.Write(respBody)
+			if _, err := w.Write(respBody); err != nil {
+				log.Printf("写入流式响应失败: %v", err)
+			}
 		} else {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(resp.StatusCode)
-			w.Write(respBody)
+			if _, err := w.Write(respBody); err != nil {
+				log.Printf("写入响应失败: %v", err)
+			}
 		}
 
 		latency := float64(time.Since(start).Milliseconds())
@@ -137,7 +145,9 @@ func NewDatabaseHandler(
 
 					if keyStore != nil && usage.APIKey != "" {
 						totalTokens := int64(usage.Usage.PromptTokens + usage.Usage.CompletionTokens)
-						keyStore.IncrementUsedQuota(usage.APIKey, totalTokens)
+						if err := keyStore.IncrementUsedQuota(usage.APIKey, totalTokens); err != nil {
+							log.Printf("扣减额度失败: %v", err)
+						}
 					}
 				}
 

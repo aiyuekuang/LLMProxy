@@ -23,6 +23,7 @@ func (e *HTTPError) Error() string {
 // 参数：
 //   - err: 错误信息
 //   - statusCode: HTTP 状态码（如果有）
+//
 // 返回：
 //   - bool: 是否应该重试
 func shouldRetry(err error, statusCode int) bool {
@@ -37,18 +38,18 @@ func shouldRetry(err error, statusCode int) bool {
 		}
 		return true
 	}
-	
+
 	// HTTP 状态码判断
 	if statusCode >= 500 {
 		// 5xx 服务器错误，应该重试
 		return true
 	}
-	
+
 	if statusCode == 429 {
 		// 限流错误，应该重试
 		return true
 	}
-	
+
 	// 4xx 客户端错误，不应该重试
 	return false
 }
@@ -58,26 +59,27 @@ func shouldRetry(err error, statusCode int) bool {
 // 参数：
 //   - attempt: 当前重试次数（从 1 开始）
 //   - config: 重试配置
+//
 // 返回：
 //   - time.Duration: 等待时间
 func calculateBackoff(attempt int, config *RetryConfig) time.Duration {
 	if attempt <= 0 {
 		return 0
 	}
-	
+
 	// 指数退避：initialWait * multiplier^(attempt-1)
 	wait := float64(config.InitialWait)
 	for i := 1; i < attempt; i++ {
 		wait *= config.Multiplier
 	}
-	
+
 	duration := time.Duration(wait)
-	
+
 	// 限制最大等待时间
 	if duration > config.MaxWait {
 		duration = config.MaxWait
 	}
-	
+
 	return duration
 }
 
@@ -85,6 +87,7 @@ func calculateBackoff(attempt int, config *RetryConfig) time.Duration {
 // 参数：
 //   - config: 重试配置
 //   - fn: 请求函数
+//
 // 返回：
 //   - error: 错误信息
 func retryRequest(config *RetryConfig, fn func() (int, error)) error {
@@ -92,10 +95,10 @@ func retryRequest(config *RetryConfig, fn func() (int, error)) error {
 		_, err := fn()
 		return err
 	}
-	
+
 	var lastErr error
 	var lastStatusCode int
-	
+
 	for attempt := 0; attempt <= config.MaxRetries; attempt++ {
 		if attempt > 0 {
 			// 计算退避时间
@@ -103,12 +106,12 @@ func retryRequest(config *RetryConfig, fn func() (int, error)) error {
 			log.Printf("重试 %d/%d，等待 %v", attempt, config.MaxRetries, wait)
 			time.Sleep(wait)
 		}
-		
+
 		// 执行请求
 		statusCode, err := fn()
 		lastStatusCode = statusCode
 		lastErr = err
-		
+
 		// 请求成功
 		if err == nil && statusCode >= 200 && statusCode < 300 {
 			if attempt > 0 {
@@ -116,20 +119,20 @@ func retryRequest(config *RetryConfig, fn func() (int, error)) error {
 			}
 			return nil
 		}
-		
+
 		// 判断是否应该重试
 		if !shouldRetry(err, statusCode) {
 			log.Printf("请求失败，不应重试: status=%d, err=%v", statusCode, err)
 			return lastErr
 		}
-		
+
 		// 最后一次尝试失败
 		if attempt == config.MaxRetries {
 			log.Printf("达到最大重试次数 %d，放弃", config.MaxRetries)
 			break
 		}
 	}
-	
+
 	if lastErr != nil {
 		return fmt.Errorf("重试失败: %w", lastErr)
 	}

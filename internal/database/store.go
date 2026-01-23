@@ -2,11 +2,14 @@ package database
 
 import (
 	"database/sql"
+	"fmt"
 	"log"
 	"sync"
 	"time"
 
 	"gorm.io/driver/mysql"
+	"gorm.io/driver/postgres"
+	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 
@@ -81,7 +84,20 @@ func NewStoreFromConnection(conn *config.DatabaseConnection, tableName string) (
 		return nil, nil
 	}
 
-	db, err := gorm.Open(mysql.Open(dsn), &gorm.Config{
+	// 根据驱动类型选择 GORM dialector
+	var dialector gorm.Dialector
+	switch conn.Driver {
+	case "mysql":
+		dialector = mysql.Open(dsn)
+	case "postgres":
+		dialector = postgres.Open(dsn)
+	case "sqlite":
+		dialector = sqlite.Open(dsn)
+	default:
+		return nil, fmt.Errorf("不支持的数据库驱动: %s", conn.Driver)
+	}
+
+	db, err := gorm.Open(dialector, &gorm.Config{
 		Logger: logger.Default.LogMode(logger.Silent),
 	})
 	if err != nil {
@@ -123,14 +139,39 @@ func NewStoreFromConnection(conn *config.DatabaseConnection, tableName string) (
 }
 
 // NewStoreFromDB 从已创建的数据库连接创建 Store
+// 参数:
+//   - sqlDB: 已创建的数据库连接
+//   - tableName: 表名
 func NewStoreFromDB(sqlDB *sql.DB, tableName string) (*Store, error) {
+	return NewStoreFromDBWithDriver(sqlDB, tableName, "mysql")
+}
+
+// NewStoreFromDBWithDriver 从已创建的数据库连接创建 Store（指定驱动类型）
+// 参数:
+//   - sqlDB: 已创建的数据库连接
+//   - tableName: 表名
+//   - driver: 驱动类型 (mysql/postgres/sqlite)
+func NewStoreFromDBWithDriver(sqlDB *sql.DB, tableName string, driver string) (*Store, error) {
 	if sqlDB == nil {
 		return nil, nil
 	}
 
-	db, err := gorm.Open(mysql.New(mysql.Config{
-		Conn: sqlDB,
-	}), &gorm.Config{
+	// 根据驱动类型选择 GORM dialector
+	var dialector gorm.Dialector
+	switch driver {
+	case "mysql", "":
+		dialector = mysql.New(mysql.Config{Conn: sqlDB})
+	case "postgres":
+		dialector = postgres.New(postgres.Config{Conn: sqlDB})
+	case "sqlite":
+		// SQLite 不支持通过已有连接创建，回退到 mysql
+		log.Println("警告: SQLite 不支持通过已有连接创建 GORM，尝试使用 MySQL 模式")
+		dialector = mysql.New(mysql.Config{Conn: sqlDB})
+	default:
+		return nil, fmt.Errorf("不支持的数据库驱动: %s", driver)
+	}
+
+	db, err := gorm.Open(dialector, &gorm.Config{
 		Logger: logger.Default.LogMode(logger.Silent),
 	})
 	if err != nil {

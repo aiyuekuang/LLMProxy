@@ -11,15 +11,16 @@ import (
 
 // BaseLoadBalancer 基础负载均衡器（提供通用功能）
 type BaseLoadBalancer struct {
-	backends    []*Backend               // 后端列表
+	backends    []*Backend                // 后端列表
 	healthCheck *config.HealthCheckConfig // 健康检查配置
-	httpClient  *http.Client             // HTTP 客户端
+	httpClient  *http.Client              // HTTP 客户端
 }
 
 // NewBaseLoadBalancer 创建基础负载均衡器
 // 参数：
 //   - backends: 后端配置列表
 //   - healthCheck: 健康检查配置
+//
 // 返回：
 //   - *BaseLoadBalancer: 基础负载均衡器实例
 func NewBaseLoadBalancer(backends []*config.Backend, healthCheck *config.HealthCheckConfig) *BaseLoadBalancer {
@@ -99,24 +100,27 @@ func (b *BaseLoadBalancer) checkHealth(updateFunc func(*Backend, bool)) {
 // isHealthy 检查后端是否健康
 // 参数：
 //   - backend: 后端实例
+//
 // 返回：
 //   - bool: 是否健康
 func (b *BaseLoadBalancer) isHealthy(backend *Backend) bool {
 	if b.healthCheck == nil {
 		return true
 	}
-	
+
 	path := b.healthCheck.Path
 	if path == "" {
 		path = "/health"
 	}
-	
+
 	url := backend.URL + path
 	resp, err := b.httpClient.Get(url)
 	if err != nil {
 		return false
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
 	expectedStatus := b.healthCheck.ExpectedStatus
 	if expectedStatus == 0 {

@@ -5,11 +5,13 @@ import (
 	"encoding/json"
 	"io"
 	"log"
+	"math/rand"
 	"net/http"
 	"time"
 
 	"llmproxy/internal/auth"
 	"llmproxy/internal/config"
+	"llmproxy/internal/hooks"
 	"llmproxy/internal/lb"
 	"llmproxy/internal/metrics"
 	"llmproxy/internal/ratelimit"
@@ -31,6 +33,17 @@ type RequestBody struct {
 	Stream bool `json:"stream"`
 }
 
+// HandlerOptions 处理器选项
+type HandlerOptions struct {
+	Config       *config.Config
+	LoadBalancer lb.LoadBalancer
+	Router       *routing.Router
+	KeyStore     auth.KeyStore
+	Limiter      ratelimit.RateLimiter
+	Logger       *Logger
+	Hooks        *hooks.Executor
+}
+
 // NewHandler 创建代理处理器
 // 参数：
 //   - cfg: 配置对象
@@ -38,11 +51,34 @@ type RequestBody struct {
 //   - router: 智能路由器（可选）
 //   - keyStore: Key 存储（可选）
 //   - limiter: 限流器（可选）
+//
 // 返回：
 //   - http.HandlerFunc: HTTP 处理函数
 func NewHandler(cfg *config.Config, loadBalancer lb.LoadBalancer, router *routing.Router, keyStore auth.KeyStore, limiter ratelimit.RateLimiter) http.HandlerFunc {
+	return NewHandlerWithOptions(&HandlerOptions{
+		Config:       cfg,
+		LoadBalancer: loadBalancer,
+		Router:       router,
+		KeyStore:     keyStore,
+		Limiter:      limiter,
+	})
+}
+
+// NewHandlerWithOptions 使用完整选项创建代理处理器
+func NewHandlerWithOptions(opts *HandlerOptions) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
+		requestID := generateRequestID()
+		clientIP := ExtractClientIP(r)
+
+		// 提取 API Key 和 User ID（用于日志和钩子）
+		apiKey := extractAPIKey(r)
+		var userID string
+		if opts.KeyStore != nil && apiKey != "" {
+			if key, err := opts.KeyStore.Get(apiKey); err == nil {
+				userID = key.UserID
+			}
+		}
 
 		// 1. 仅处理 LLM API 路径
 		if !isLLMEndpoint(r.URL.Path) {
@@ -63,7 +99,9 @@ func NewHandler(cfg *config.Config, loadBalancer lb.LoadBalancer, router *routin
 			http.Error(w, "Bad request", http.StatusBadRequest)
 			return
 		}
-		defer r.Body.Close()
+		defer func() {
+			_ = r.Body.Close()
+		}()
 
 		// 4. 解析请求体，仅提取 stream 参数
 		var reqBody RequestBody
@@ -73,18 +111,43 @@ func NewHandler(cfg *config.Config, loadBalancer lb.LoadBalancer, router *routin
 			return
 		}
 
+		// 4.1 执行 on_request 钩子
+		if opts.Hooks != nil {
+			hookCtx := &hooks.HookContext{
+				Request:   hooks.ExtractRequestInfo(r, bodyBytes, clientIP, apiKey, userID),
+				Metadata:  make(map[string]interface{}),
+				Timestamp: start,
+			}
+			result := opts.Hooks.ExecuteOnRequest(hookCtx)
+			if !result.Continue {
+				log.Printf("on_request 钩子拒绝请求: %s", result.Error)
+				http.Error(w, result.Error, http.StatusForbidden)
+				return
+			}
+		}
+
 		// 5. 选择后端并发送请求
 		var resp *http.Response
 		var backend *lb.Backend
-		
-		if router != nil {
+
+		if opts.Router != nil {
 			// 使用智能路由（带重试和故障转移）
-			resp, backend, err = router.ProxyRequest(r, bodyBytes, "")
+			resp, backend, err = opts.Router.ProxyRequest(r, bodyBytes, "")
 		} else {
 			// 使用简单负载均衡
-			backend = loadBalancer.Next()
+			backend = opts.LoadBalancer.Next()
 			if backend == nil {
 				log.Println("没有可用的健康后端")
+				// 执行 on_error 钩子
+				if opts.Hooks != nil {
+					hookCtx := &hooks.HookContext{
+						Request:   hooks.ExtractRequestInfo(r, bodyBytes, clientIP, apiKey, userID),
+						Error:     err,
+						Metadata:  make(map[string]interface{}),
+						Timestamp: start,
+					}
+					opts.Hooks.ExecuteOnError(hookCtx)
+				}
 				http.Error(w, "No healthy backend", http.StatusServiceUnavailable)
 				return
 			}
@@ -93,13 +156,25 @@ func NewHandler(cfg *config.Config, loadBalancer lb.LoadBalancer, router *routin
 
 		if err != nil {
 			log.Printf("后端请求失败: %v", err)
+			// 执行 on_error 钩子
+			if opts.Hooks != nil {
+				hookCtx := &hooks.HookContext{
+					Request:   hooks.ExtractRequestInfo(r, bodyBytes, clientIP, apiKey, userID),
+					Error:     err,
+					Metadata:  make(map[string]interface{}),
+					Timestamp: start,
+				}
+				opts.Hooks.ExecuteOnError(hookCtx)
+			}
 			http.Error(w, "Backend error", http.StatusBadGateway)
 			if backend != nil {
 				metrics.RecordRequest(r.URL.Path, reqBody.Stream, backend.URL, float64(time.Since(start).Milliseconds()), http.StatusBadGateway)
 			}
 			return
 		}
-		defer resp.Body.Close()
+		defer func() {
+			_ = resp.Body.Close()
+		}()
 
 		log.Printf("请求转发到后端: %s, stream=%v", backend.URL, reqBody.Stream)
 
@@ -128,12 +203,15 @@ func NewHandler(cfg *config.Config, loadBalancer lb.LoadBalancer, router *routin
 				n, readErr := resp.Body.Read(buf)
 				if n > 0 {
 					// 写入客户端
-					w.Write(buf[:n])
+					if _, err := w.Write(buf[:n]); err != nil {
+						log.Printf("写入客户端失败: %v", err)
+						break
+					}
 					if flusher != nil {
 						flusher.Flush() // 立即刷新到客户端
 					}
 					// 同时收集到缓冲区
-					buffer.Write(buf[:n])
+					_, _ = buffer.Write(buf[:n]) // buffer.Write 不会返回错误
 				}
 				if readErr != nil {
 					if readErr != io.EOF {
@@ -154,7 +232,32 @@ func NewHandler(cfg *config.Config, loadBalancer lb.LoadBalancer, router *routin
 			}
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(resp.StatusCode)
-			w.Write(respBody)
+			if _, err := w.Write(respBody); err != nil {
+				log.Printf("写入响应失败: %v", err)
+			}
+		}
+
+		// 7. 执行 on_response 钩子
+		if opts.Hooks != nil {
+			respHeaders := make(map[string]string)
+			for k, v := range resp.Header {
+				if len(v) > 0 {
+					respHeaders[k] = v[0]
+				}
+			}
+			hookCtx := &hooks.HookContext{
+				Request: hooks.ExtractRequestInfo(r, bodyBytes, clientIP, apiKey, userID),
+				Response: &hooks.ResponseInfo{
+					StatusCode: resp.StatusCode,
+					Headers:    respHeaders,
+					Body:       respBody,
+					LatencyMs:  time.Since(start).Milliseconds(),
+					BackendURL: backend.URL,
+				},
+				Metadata:  make(map[string]interface{}),
+				Timestamp: start,
+			}
+			opts.Hooks.ExecuteOnResponse(hookCtx)
 		}
 
 		// 8. 记录请求指标
@@ -163,38 +266,98 @@ func NewHandler(cfg *config.Config, loadBalancer lb.LoadBalancer, router *routin
 
 		log.Printf("请求完成: status=%d, latency=%dms", resp.StatusCode, int(latency))
 
-		// 9. 异步触发用量上报和额度扣减
+		// 9. 异步触发用量上报、日志记录和 on_complete 钩子
 		go func() {
 			usage := collectUsage(bodyBytes, respBody, reqBody.Stream, backend.URL, r.URL.Path, resp.StatusCode, int64(latency))
 			if usage != nil {
 				// 添加用户信息
-				if keyStore != nil {
-					apiKeyStr := extractAPIKey(r)
-					if apiKeyStr != "" {
-						key, err := keyStore.Get(apiKeyStr)
-						if err == nil {
-							usage.UserID = key.UserID
-							usage.APIKey = apiKeyStr
-						}
-					}
-				}
-				
+				usage.UserID = userID
+				usage.APIKey = apiKey
+
 				// 记录 Token 使用量指标（如果有 usage 信息）
 				if usage.Usage != nil {
 					metrics.RecordUsage(usage.Usage.PromptTokens, usage.Usage.CompletionTokens)
-					
+
 					// 扣减额度（如果启用鉴权）
-					if keyStore != nil && usage.APIKey != "" {
+					if opts.KeyStore != nil && usage.APIKey != "" {
 						totalTokens := int64(usage.Usage.PromptTokens + usage.Usage.CompletionTokens)
-						keyStore.IncrementUsedQuota(usage.APIKey, totalTokens)
+						if err := opts.KeyStore.IncrementUsedQuota(usage.APIKey, totalTokens); err != nil {
+							log.Printf("扣减额度失败: %v", err)
+						}
 					}
 				}
-				
+
 				// 发送用量数据（Webhook 或数据库）
-				SendUsage(cfg.Usage, usage)
+				SendUsage(opts.Config.Usage, usage)
+			}
+
+			// 记录请求日志
+			if opts.Logger != nil {
+				model := ""
+				if usage != nil && usage.RequestBody != nil {
+					if m, ok := usage.RequestBody["model"].(string); ok {
+						model = m
+					}
+				}
+				reqLog := &RequestLog{
+					RequestID:    requestID,
+					Timestamp:    start,
+					ClientIP:     clientIP,
+					Method:       r.Method,
+					Path:         r.URL.Path,
+					Headers:      ExtractHeaders(r),
+					RequestBody:  string(bodyBytes),
+					ResponseBody: string(respBody),
+					StatusCode:   resp.StatusCode,
+					LatencyMs:    int64(latency),
+					BackendURL:   backend.URL,
+					APIKey:       apiKey,
+					UserID:       userID,
+					Model:        model,
+					IsStream:     reqBody.Stream,
+				}
+				opts.Logger.LogRequest(reqLog)
+			}
+
+			// 执行 on_complete 钩子
+			if opts.Hooks != nil {
+				respHeaders := make(map[string]string)
+				for k, v := range resp.Header {
+					if len(v) > 0 {
+						respHeaders[k] = v[0]
+					}
+				}
+				hookCtx := &hooks.HookContext{
+					Request: hooks.ExtractRequestInfo(r, bodyBytes, clientIP, apiKey, userID),
+					Response: &hooks.ResponseInfo{
+						StatusCode: resp.StatusCode,
+						Headers:    respHeaders,
+						Body:       respBody,
+						LatencyMs:  int64(latency),
+						BackendURL: backend.URL,
+					},
+					Metadata:  make(map[string]interface{}),
+					Timestamp: start,
+				}
+				opts.Hooks.ExecuteOnComplete(hookCtx)
 			}
 		}()
 	}
+}
+
+// generateRequestID 生成请求 ID
+func generateRequestID() string {
+	return time.Now().Format("20060102150405") + "-" + randomString(8)
+}
+
+// randomString 生成随机字符串
+func randomString(n int) string {
+	const letters = "abcdefghijklmnopqrstuvwxyz0123456789"
+	b := make([]byte, n)
+	for i := range b {
+		b[i] = letters[rand.Intn(len(letters))]
+	}
+	return string(b)
 }
 
 // sendRequest 发送请求到后端
@@ -202,6 +365,7 @@ func NewHandler(cfg *config.Config, loadBalancer lb.LoadBalancer, router *routin
 //   - r: 原始请求
 //   - backend: 后端实例
 //   - bodyBytes: 请求体
+//
 // 返回：
 //   - *http.Response: 响应
 //   - error: 错误信息
@@ -218,6 +382,7 @@ func sendRequest(r *http.Request, backend *lb.Backend, bodyBytes []byte) (*http.
 // extractAPIKey 从请求中提取 API Key
 // 参数：
 //   - r: HTTP 请求
+//
 // 返回：
 //   - string: API Key
 func extractAPIKey(r *http.Request) string {
@@ -228,21 +393,10 @@ func extractAPIKey(r *http.Request) string {
 	return r.Header.Get("X-API-Key")
 }
 
-// maskKey 脱敏 API Key
-// 参数：
-//   - key: API Key
-// 返回：
-//   - string: 脱敏后的 Key
-func maskKey(key string) string {
-	if len(key) <= 8 {
-		return key
-	}
-	return key[:8] + "..."
-}
-
 // isLLMEndpoint 判断是否为 LLM API 端点
 // 参数：
 //   - path: 请求路径
+//
 // 返回：
 //   - bool: 是否为 LLM 端点
 func isLLMEndpoint(path string) bool {

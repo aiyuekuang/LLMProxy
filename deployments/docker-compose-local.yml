@@ -1,0 +1,25 @@
+version: '3.8'
+
+services:
+  llmproxy:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"   # 代理端口
+      - "8001:8001"   # Admin API 端口
+    volumes:
+      - ./config-local.yaml:/home/llmproxy/config.yaml
+      - llmproxy-data:/home/llmproxy/data
+    command: ["/home/llmproxy/llmproxy", "-config", "/home/llmproxy/config.yaml"]
+    environment:
+      - TZ=Asia/Shanghai
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+volumes:
+  llmproxy-data:

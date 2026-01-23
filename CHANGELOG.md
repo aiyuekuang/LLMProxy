@@ -5,7 +5,62 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.5.0] - 2026-01-23
+
+### Added
+
+#### Admin API 模块
+- **内置 API Key 管理**：新增 `internal/admin/` 模块，提供完整的 API Key 管理接口
+  - `POST /admin/keys/create` - 创建 API Key
+  - `POST /admin/keys/update` - 更新 API Key
+  - `POST /admin/keys/delete` - 删除 API Key
+  - `POST /admin/keys/get` - 获取 API Key
+  - `POST /admin/keys/list` - 列出 API Key
+  - `POST /admin/keys/sync` - 批量同步 API Key（支持全量/增量模式）
+- **SQLite 存储**：内置 SQLite 数据库存储 API Key，无需外部数据库依赖
+- **用量存储**：新增 `admin.UsageStore` 支持用量记录存储和查询
+
+#### Builtin Provider 类型
+- **鉴权 Provider**：新增 `builtin` 类型，使用 Admin 模块的 SQLite 存储
+- **用量上报器**：新增 `builtin` 类型，支持本地存储用量记录
+- **数据保留**：支持配置 `retention_days` 自动清理过期数据
+
+#### 配置示例
+```yaml
+admin:
+  enabled: true
+  token: "your-secure-admin-token"
+  db_path: "./data/keys.db"
+
+auth:
+  enabled: true
+  pipeline:
+    - name: "builtin_auth"
+      type: "builtin"
+      enabled: true
+
+usage:
+  enabled: true
+  reporters:
+    - name: "local"
+      type: "builtin"
+      enabled: true
+      builtin:
+        retention_days: 30
+```
+
+### Changed
+- **文档更新**：更新 README、configuration.md、auth-pipeline.md、development-guide.md
+- **项目结构更新**：添加 admin、storage、types 模块说明
+- **配置文件优化**：所有后端配置统一添加 `name` 字段
+
+### Fixed
+- **Lint 修复**：修复 service discovery 模块中的静态分析问题
+  - `consul.go`: 错误字符串小写、显式忽略 `fmt.Sscanf` 返回值
+  - `etcd.go`: 错误字符串小写
+  - `kubernetes.go`: 错误字符串小写
+
+---
 
 ## [0.4.1] - 2026-01-21
 

@@ -10,7 +10,7 @@ import (
 
 // LeastConnections 最少连接数负载均衡器
 type LeastConnections struct {
-	*BaseLoadBalancer        // 嵌入基础负载均衡器
+	*BaseLoadBalancer                // 嵌入基础负载均衡器
 	concurrent        map[string]int // 每个后端的当前并发数
 	mu                sync.RWMutex   // 读写锁
 }
@@ -19,6 +19,7 @@ type LeastConnections struct {
 // 参数：
 //   - backends: 后端配置列表
 //   - healthCheck: 健康检查配置
+//
 // 返回：
 //   - LoadBalancer: 负载均衡器实例
 func NewLeastConnections(backends []*config.Backend, healthCheck *config.HealthCheckConfig) LoadBalancer {

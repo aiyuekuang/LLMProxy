@@ -9,6 +9,7 @@ import (
 // FromConfig 从主配置创建管道配置
 // 参数：
 //   - cfg: 主配置中的鉴权配置
+//
 // 返回：
 //   - *PipelineConfig: 管道配置
 func FromConfig(cfg *config.AuthConfig) *PipelineConfig {
@@ -19,6 +20,7 @@ func FromConfig(cfg *config.AuthConfig) *PipelineConfig {
 	pipelineConfig := &PipelineConfig{
 		Enabled:     true,
 		HeaderNames: cfg.HeaderNames,
+		SkipPaths:   cfg.SkipPaths,
 		Mode:        PipelineMode(cfg.Mode),
 		Providers:   make([]*ProviderConfig, 0),
 	}

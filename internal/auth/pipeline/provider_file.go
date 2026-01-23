@@ -20,6 +20,7 @@ type FileProvider struct {
 // 参数：
 //   - name: Provider 名称
 //   - keys: API Key 列表
+//
 // 返回：
 //   - Provider: Provider 实例
 func NewFileProvider(name string, keys []*config.APIKey) Provider {
@@ -49,6 +50,7 @@ func NewFileProvider(name string, keys []*config.APIKey) Provider {
 // 参数：
 //   - ctx: 上下文
 //   - apiKey: API Key 字符串
+//
 // 返回：
 //   - *ProviderResult: 查询结果
 func (f *FileProvider) Query(ctx context.Context, apiKey string) *ProviderResult {
@@ -99,6 +101,7 @@ func (f *FileProvider) UpdateKey(key *config.APIKey) {
 // 参数：
 //   - apiKey: API Key 字符串
 //   - tokens: 消耗的 tokens
+//
 // 返回：
 //   - error: 错误信息
 func (f *FileProvider) IncrementUsedQuota(apiKey string, tokens int64) error {

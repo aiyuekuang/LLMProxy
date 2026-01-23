@@ -20,7 +20,7 @@
 server:
   listen: ":8000"                  # 监听地址，格式: ":端口" 或 "IP:端口"
   read_timeout: 30s                # 读取超时
-  write_timeout: 60s               # 写入超时（LLM 响应可能较长）
+  write_timeout: 60s               # 写入超时（注意：流式响应时实际为0，避免中断长时间streaming）
   idle_timeout: 120s               # 空闲连接超时
   max_header_bytes: 1048576        # 最大请求头大小 (1MB)
   max_body_size: 10485760          # 最大请求体大小 (10MB)
@@ -276,6 +276,17 @@ discovery:
         max_memory: 10
 
 # ============================================================
+#                    Admin API 模块 (admin)
+# ============================================================
+# 内置管理 API，提供 API Key 的 CRUD 操作和用量查询
+# 注意：auth.pipeline 中的 builtin 类型和 usage.reporters 中的 builtin 类型都依赖此模块
+admin:
+  enabled: true                    # 是否启用
+  token: "your-secure-admin-token" # 访问令牌（必填，用于认证 Admin API 请求）
+  listen: ""                       # 监听地址（留空则挂载到主服务器）
+  db_path: "./data/keys.db"        # SQLite 数据库路径
+
+# ============================================================
 #                    鉴权模块 (auth)
 # ============================================================
 # API Key 验证，支持多种验证方式的管道模式
@@ -297,9 +308,16 @@ auth:
   # 鉴权管道（按顺序执行）
   pipeline:
     
+    # ----- 内置 SQLite 鉴权 -----
+    # 使用 Admin 模块的 KeyStore 进行鉴权（需启用 admin 配置）
+    - name: "builtin_auth"
+      type: "builtin"              # 类型: builtin
+      enabled: true                # 是否启用此提供者
+      # builtin 类型无额外配置，直接使用 admin.db_path 指定的 SQLite 数据库
+    
     # ----- Redis 鉴权 -----
     - name: "redis_auth"           # 提供者名称
-      type: "redis"                # 类型: redis / database / webhook / lua
+      type: "redis"                # 类型: builtin / redis / database / webhook / lua / static
       enabled: true                # 是否启用此提供者
       redis:
         storage: "primary"         # 引用 storage.caches[name]
@@ -384,11 +402,13 @@ auth:
 logging:
   enabled: true                    # 是否启用
   
-  # ----- 请求日志 -----
+# ----- 请求日志 -----
   # 记录每次 API 请求的详细信息（模型、Token、延迟等）
   request:
     enabled: true                  # 是否启用
-    storage: "primary"             # 存储方式: 引用 storage.databases[name] / file / stdout
+    storage: "primary"             # 引用 storage.databases[name]（数据库存储）
+    table: "request_logs"          # 表名（默认 request_logs）
+    include_body: false            # 是否记录请求/响应体
     script:                        # Lua 脚本（决定是否记录、修改日志内容）
       enabled: false
       path: "./scripts/log_filter.lua"
@@ -423,7 +443,8 @@ logging:
 # 请求频率限制
 rate_limit:
   enabled: false                   # 是否启用
-  storage: "primary"               # 存储方式: 引用 storage.caches[name] / memory
+  storage: "memory"                # 存储类型: memory / redis
+  redis: "primary"                 # 当 storage=redis 时，引用 storage.caches[name]
   script:                          # Lua 脚本（自定义限流逻辑）
     enabled: false
     path: "./scripts/ratelimit.lua"
@@ -453,7 +474,7 @@ rate_limit:
 # 负载均衡、重试和故障转移
 routing:
   enabled: true                    # 是否启用
-  load_balance: "weighted"         # 策略: round_robin / weighted / least_conn / random
+  load_balance: "round_robin"      # 策略: round_robin / weighted / least_connections / latency_based
   
   # 超时配置
   timeout: 60s                     # 总请求超时（覆盖后端默认值）

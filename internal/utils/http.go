@@ -11,6 +11,7 @@ import (
 // 参数：
 //   - authHeader: Authorization Header 值
 //   - apiKeyHeader: X-API-Key Header 值
+//
 // 返回：
 //   - string: API Key
 func ExtractAPIKey(authHeader, apiKeyHeader string) string {
@@ -21,12 +22,12 @@ func ExtractAPIKey(authHeader, apiKeyHeader string) string {
 			return strings.TrimPrefix(authHeader, "Bearer ")
 		}
 	}
-	
+
 	// 方式 2: X-API-Key Header
 	if apiKeyHeader != "" {
 		return apiKeyHeader
 	}
-	
+
 	return ""
 }
 
@@ -35,6 +36,7 @@ func ExtractAPIKey(authHeader, apiKeyHeader string) string {
 // 参数：
 //   - headers: HTTP 请求头
 //   - headerNames: 自定义 Header 名称列表，为空时使用默认值 ["Authorization", "X-API-Key"]
+//
 // 返回：
 //   - string: API Key
 func ExtractAPIKeyFromHeaders(headers map[string][]string, headerNames []string) string {
@@ -42,19 +44,19 @@ func ExtractAPIKeyFromHeaders(headers map[string][]string, headerNames []string)
 	if len(headerNames) == 0 {
 		headerNames = []string{"Authorization", "X-API-Key"}
 	}
-	
+
 	// 按顺序尝试提取
 	for _, name := range headerNames {
 		values, ok := headers[name]
 		if !ok || len(values) == 0 {
 			continue
 		}
-		
+
 		value := values[0]
 		if value == "" {
 			continue
 		}
-		
+
 		// Authorization Header 特殊处理：提取 Bearer token
 		if name == "Authorization" {
 			if strings.HasPrefix(value, "Bearer ") {
@@ -63,11 +65,11 @@ func ExtractAPIKeyFromHeaders(headers map[string][]string, headerNames []string)
 			// 如果不是 Bearer 格式，继续尝试下一个 Header
 			continue
 		}
-		
+
 		// 其他 Header 直接返回值
 		return value
 	}
-	
+
 	return ""
 }
 
@@ -76,6 +78,7 @@ func ExtractAPIKeyFromHeaders(headers map[string][]string, headerNames []string)
 //   - xForwardedFor: X-Forwarded-For Header 值
 //   - xRealIP: X-Real-IP Header 值
 //   - remoteAddr: RemoteAddr 值
+//
 // 返回：
 //   - string: 客户端 IP
 func GetClientIP(xForwardedFor, xRealIP, remoteAddr string) string {
@@ -87,25 +90,26 @@ func GetClientIP(xForwardedFor, xRealIP, remoteAddr string) string {
 			return strings.TrimSpace(ips[0])
 		}
 	}
-	
+
 	// 2. 尝试从 X-Real-IP 获取
 	if xRealIP != "" {
 		return xRealIP
 	}
-	
+
 	// 3. 使用 RemoteAddr
 	ip := remoteAddr
 	// 去掉端口号
 	if idx := strings.LastIndex(ip, ":"); idx != -1 {
 		ip = ip[:idx]
 	}
-	
+
 	return ip
 }
 
 // MaskKey 脱敏 API Key（只显示前 8 位）
 // 参数：
 //   - key: API Key
+//
 // 返回：
 //   - string: 脱敏后的 Key
 func MaskKey(key string) string {

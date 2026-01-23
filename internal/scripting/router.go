@@ -16,6 +16,7 @@ type RouterScript struct {
 // NewRouterScript 创建路由脚本执行器
 // 参数：
 //   - config: 引擎配置
+//
 // 返回：
 //   - *RouterScript: 路由脚本执行器
 //   - error: 错误信息
@@ -40,6 +41,7 @@ func NewRouterScript(config *EngineConfig) (*RouterScript, error) {
 //   - path: 请求路径
 //   - headers: 请求头
 //   - backends: 可用后端列表
+//
 // 返回：
 //   - string: 后端名称（空字符串表示使用默认负载均衡）
 //   - error: 错误信息
@@ -86,8 +88,10 @@ func (r *RouterScript) SelectBackend(
 		backendTable.RawSetString("url", lua.LString(backend.URL))
 		backendTable.RawSetString("healthy", lua.LBool(backend.Healthy))
 		backendTable.RawSetString("weight", lua.LNumber(backend.Weight))
-		backendTable.RawSetString("latency_ms", lua.LNumber(backend.AvgLatency.Milliseconds()))
-		backendTable.RawSetString("active_connections", lua.LNumber(backend.ActiveConnections))
+		// 注意: lb.Backend 当前没有 AvgLatency 和 ActiveConnections 字段
+		// 如需这些信息，需要扩展 lb.Backend 结构体
+		backendTable.RawSetString("latency_ms", lua.LNumber(0))
+		backendTable.RawSetString("active_connections", lua.LNumber(0))
 		backendsTable.RawSetString(name, backendTable)
 	}
 	vm.SetGlobal("backends", backendsTable)

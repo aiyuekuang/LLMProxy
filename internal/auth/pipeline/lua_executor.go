@@ -54,6 +54,7 @@ func registerGlobalFunctions(L *lua.LState) {
 // 参数：
 //   - script: Lua 脚本内容
 //   - ctx: 鉴权上下文
+//
 // 返回：
 //   - *AuthResult: 鉴权结果
 //   - error: 错误信息
@@ -70,7 +71,7 @@ func (e *LuaExecutor) Execute(script string, ctx *AuthContext) (*AuthResult, err
 
 	// 执行脚本
 	if err := L.DoString(script); err != nil {
-		return nil, fmt.Errorf("Lua 脚本执行失败: %w", err)
+		return nil, fmt.Errorf("lua 脚本执行失败: %w", err)
 	}
 
 	// 获取返回值
@@ -84,6 +85,7 @@ func (e *LuaExecutor) Execute(script string, ctx *AuthContext) (*AuthResult, err
 // 参数：
 //   - filePath: Lua 脚本文件路径
 //   - ctx: 鉴权上下文
+//
 // 返回：
 //   - *AuthResult: 鉴权结果
 //   - error: 错误信息

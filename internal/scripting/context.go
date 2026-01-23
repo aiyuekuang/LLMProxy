@@ -10,6 +10,7 @@ import (
 // 参数：
 //   - vm: Lua VM 实例
 //   - m: Go map
+//
 // 返回：
 //   - *lua.LTable: Lua table
 func MapToLuaTable(vm *lua.LState, m map[string]interface{}) *lua.LTable {
@@ -26,6 +27,7 @@ func MapToLuaTable(vm *lua.LState, m map[string]interface{}) *lua.LTable {
 // 参数：
 //   - vm: Lua VM 实例
 //   - v: Go 值
+//
 // 返回：
 //   - lua.LValue: Lua 值
 func GoValueToLua(vm *lua.LState, v interface{}) lua.LValue {
@@ -72,6 +74,7 @@ func GoValueToLua(vm *lua.LState, v interface{}) lua.LValue {
 // LuaTableToMap 将 Lua table 转换为 Go map（支持嵌套）
 // 参数：
 //   - table: Lua table
+//
 // 返回：
 //   - map[string]interface{}: Go map
 func LuaTableToMap(table *lua.LTable) map[string]interface{} {
@@ -88,6 +91,7 @@ func LuaTableToMap(table *lua.LTable) map[string]interface{} {
 // LuaValueToGo 将 Lua 值转换为 Go 值（支持嵌套）
 // 参数：
 //   - value: Lua 值
+//
 // 返回：
 //   - interface{}: Go 值
 func LuaValueToGo(value lua.LValue) interface{} {
@@ -114,6 +118,7 @@ func LuaValueToGo(value lua.LValue) interface{} {
 // isArray 判断 Lua table 是否为数组
 // 参数：
 //   - table: Lua table
+//
 // 返回：
 //   - bool: 是否为数组
 func isArray(table *lua.LTable) bool {
@@ -134,6 +139,7 @@ func isArray(table *lua.LTable) bool {
 // luaTableToArray 将 Lua table 转换为 Go 数组
 // 参数：
 //   - table: Lua table
+//
 // 返回：
 //   - []interface{}: Go 数组
 func luaTableToArray(table *lua.LTable) []interface{} {

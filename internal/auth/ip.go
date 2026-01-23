@@ -9,6 +9,7 @@ import (
 //   - clientIP: 客户端 IP
 //   - allowedIPs: IP 白名单（CIDR 格式）
 //   - deniedIPs: IP 黑名单（CIDR 格式）
+//
 // 返回：
 //   - bool: 是否允许
 func CheckIPAllowed(clientIP string, allowedIPs []string, deniedIPs []string) bool {
@@ -16,26 +17,26 @@ func CheckIPAllowed(clientIP string, allowedIPs []string, deniedIPs []string) bo
 	if ip == nil {
 		return false
 	}
-	
+
 	// 1. 检查黑名单（优先）
 	for _, cidr := range deniedIPs {
 		if matchCIDR(ip, cidr) {
 			return false
 		}
 	}
-	
+
 	// 2. 检查白名单
 	// 如果白名单为空，表示允许所有 IP
 	if len(allowedIPs) == 0 {
 		return true
 	}
-	
+
 	for _, cidr := range allowedIPs {
 		if matchCIDR(ip, cidr) {
 			return true
 		}
 	}
-	
+
 	return false
 }
 
@@ -43,6 +44,7 @@ func CheckIPAllowed(clientIP string, allowedIPs []string, deniedIPs []string) bo
 // 参数：
 //   - ip: IP 地址
 //   - cidr: CIDR 字符串
+//
 // 返回：
 //   - bool: 是否匹配
 func matchCIDR(ip net.IP, cidr string) bool {
@@ -54,6 +56,6 @@ func matchCIDR(ip net.IP, cidr string) bool {
 		}
 		return false
 	}
-	
+
 	return ipNet.Contains(ip)
 }

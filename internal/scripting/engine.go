@@ -11,13 +11,13 @@ import (
 
 // Engine Lua 脚本引擎
 type Engine struct {
-	script      string           // 脚本内容
-	scriptFile  string           // 脚本文件路径
-	vmPool      *sync.Pool       // VM 池
-	timeout     time.Duration    // 脚本执行超时时间
-	maxMemory   int              // 最大内存限制（字节）
-	initialized bool             // 是否已初始化
-	mu          sync.RWMutex     // 读写锁
+	script      string        // 脚本内容
+	scriptFile  string        // 脚本文件路径
+	vmPool      *sync.Pool    // VM 池
+	timeout     time.Duration // 脚本执行超时时间
+	maxMemory   int           // 最大内存限制（字节）
+	initialized bool          // 是否已初始化
+	mu          sync.RWMutex  // 读写锁
 }
 
 // EngineConfig 引擎配置
@@ -31,6 +31,7 @@ type EngineConfig struct {
 // NewEngine 创建 Lua 引擎
 // 参数：
 //   - config: 引擎配置
+//
 // 返回：
 //   - *Engine: 引擎实例
 //   - error: 错误信息
@@ -48,10 +49,10 @@ func NewEngine(config *EngineConfig) (*Engine, error) {
 	}
 
 	engine := &Engine{
-		script:    config.Script,
+		script:     config.Script,
 		scriptFile: config.ScriptFile,
-		timeout:   config.Timeout,
-		maxMemory: config.MaxMemory,
+		timeout:    config.Timeout,
+		maxMemory:  config.MaxMemory,
 	}
 
 	// 创建 VM 池
@@ -117,6 +118,7 @@ func (e *Engine) validateScript() error {
 // 参数：
 //   - functionName: 要调用的函数名
 //   - args: 函数参数（Lua 值）
+//
 // 返回：
 //   - lua.LValue: 返回值
 //   - error: 错误信息
@@ -136,11 +138,8 @@ func (e *Engine) Execute(functionName string, args ...lua.LValue) (lua.LValue, e
 	vm := vmInterface.(*lua.LState)
 	defer e.vmPool.Put(vm)
 
-	// 设置超时
-	ctx := vm.Context()
-	if ctx == nil {
-		ctx = vm.NewThread()
-	}
+	// 注意：gopher-lua 不直接支持执行超时，这里通过 goroutine + select 实现
+	_ = vm.Context() // 可选：检查是否已设置 context
 
 	done := make(chan struct{})
 	var result lua.LValue
@@ -188,6 +187,7 @@ func (e *Engine) Execute(functionName string, args ...lua.LValue) (lua.LValue, e
 // ExecuteSimple 执行简单脚本（直接返回值，不调用函数）
 // 参数：
 //   - context: 上下文数据（会设置为全局变量）
+//
 // 返回：
 //   - lua.LValue: 返回值
 //   - error: 错误信息

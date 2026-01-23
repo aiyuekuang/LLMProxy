@@ -61,6 +61,8 @@ cd deployments && docker compose up -d
 
 **支持架构**：`linux/amd64`, `linux/arm64`
 
+> 📖 **[完整配置参考](docs/configuration.md)** - 所有配置项、Admin API、鉴权管道、用量上报
+
 ---
 
 ## 核心特性
@@ -114,18 +116,21 @@ backends:
   - url: "http://vllm-coder:8000"
     weight: 10
 
+admin:
+  enabled: true
+  token: "your-admin-token"
+
 auth:
   enabled: true
-  storage: "file"
   header_names: ["Authorization", "X-API-Key"]
-
-api_keys:
-  - key: "sk-llmproxy-dev-001"
-    name: "开发团队"
-    total_quota: 1000000
-    allowed_ips: ["10.0.0.0/8"]
+  skip_paths: ["/health", "/metrics"]
+  pipeline:
+    - name: builtin_auth
+      type: builtin
+      enabled: true
 
 rate_limit:
+  enabled: true
   per_key:
     requests_per_minute: 60
     max_concurrent: 3
@@ -142,35 +147,37 @@ rate_limit:
 ### 基础配置
 
 ```yaml
-# 监听地址
-listen: ":8000"
+server:
+  listen: ":8000"
 
-# 后端服务器列表
 backends:
   - url: "http://vllm:8000"
     weight: 5
   - url: "http://tgi:8081"
     weight: 3
 
-# 用量上报配置（支持多上报器）
-usage_hook:
+# Admin API（用于 API Key 管理）
+admin:
+  enabled: true
+  token: "your-secure-admin-token"
+  db_path: "./data/keys.db"
+
+# 用量上报
+usage:
   enabled: true
   reporters:
-    - name: "billing"
-      type: "webhook"
+    - name: local
+      type: builtin
       enabled: true
-      url: "https://your-billing.com/llm-usage"
-      timeout: 3s
-    - name: "database"
-      type: "database"
+    - name: billing
+      type: webhook
       enabled: true
-      database:
-        driver: "mysql"
-        dsn: "user:pass@tcp(localhost:3306)/llmproxy"
-  retry: 2
+      webhook:
+        url: "https://your-billing.com/llm-usage"
+        timeout: 3s
 
-# 健康检查配置
 health_check:
+  enabled: true
   interval: 10s
   path: /health
 ```
@@ -179,60 +186,50 @@ health_check:
 
 ```yaml
 routing:
-  # 重试配置
+  enabled: true
+  load_balance: least_connections  # round_robin / least_connections / latency_based
+  timeout: 60s
   retry:
     enabled: true
     max_retries: 3
     initial_wait: 1s
     max_wait: 10s
     multiplier: 2.0
-  
-  # 负载均衡策略
-  load_balance_strategy: "least_connections"  # round_robin, least_connections, latency_based
 ```
 
-### 鉴权配置（v0.3.0 管道模式）
+### 鉴权配置（管道模式）
 
 ```yaml
 auth:
   enabled: true
+  mode: first_match
   header_names: ["Authorization", "X-API-Key"]
-  mode: "first_match"  # first_match | all
-  
+  skip_paths:
+    - /health
+    - /metrics
   pipeline:
-    # 1. Redis 验证（生产环境）
-    - name: "redis_auth"
-      type: "redis"
+    # 内置 SQLite 鉴权（依赖 admin 模块）
+    - name: builtin_auth
+      type: builtin
       enabled: true
+    # Redis 鉴权（可选）
+    - name: redis_auth
+      type: redis
+      enabled: false
       redis:
-        addr: "localhost:6379"
+        storage: default  # 引用 storage.caches[name]
         key_pattern: "llmproxy:key:{api_key}"
-      lua_script: |
-        if tonumber(data.balance or 0) <= 0 then
-          return {allow = false, message = "余额不足，请充值"}
-        end
-        return {allow = true}
-    
-    # 2. 配置文件验证（开发环境）
-    - name: "config_file"
-      type: "file"
-      enabled: true
-      lua_script: |
-        if data.status ~= "active" then
-          return {allow = false, message = "Key 已禁用"}
-        end
-        return {allow = true}
-
-# API Keys（用于 file provider）
-api_keys:
-  - key: "sk-llmproxy-test123"
-    name: "测试 Key"
-    user_id: "user_001"
-    status: "active"
-    total_quota: 100000
-    quota_reset_period: "daily"
-    allowed_ips: ["192.168.1.0/24"]
-    expires_at: "2026-12-31T23:59:59Z"
+    # 静态配置鉴权（可选）
+    - name: static_auth
+      type: static
+      enabled: false
+      static:
+        keys:
+          - key: "sk-llmproxy-test123"
+            name: "测试 Key"
+            user_id: "user_001"
+            status: "active"
+            total_quota: 100000
 ```
 
 ### 限流配置
@@ -352,6 +349,28 @@ LLMProxy 暴露 Prometheus 指标（`/metrics`）：
 | `llmproxy_webhook_failure_total` | Counter | Webhook 失败数 |
 | `llmproxy_usage_tokens_total` | Counter | Token 使用量（标签：type=prompt/completion） |
 
+## Admin API
+
+LLMProxy 提供内置的 Admin API 来管理 API Key：
+
+| 端点 | 说明 |
+|------|------|
+| `POST /admin/keys/create` | 创建 API Key |
+| `POST /admin/keys/update` | 更新 API Key |
+| `POST /admin/keys/delete` | 删除 API Key |
+| `POST /admin/keys/get` | 获取 API Key |
+| `POST /admin/keys/list` | 列出 API Key |
+| `POST /admin/keys/sync` | 批量同步 API Key |
+
+需要 `X-Admin-Token` 请求头进行鉴权。在配置中启用：
+
+```yaml
+admin:
+  enabled: true
+  token: "your-secure-admin-token"
+  db_path: "./data/keys.db"  # SQLite 数据库路径
+```
+
 ## API 使用示例
 
 ### 非流式请求
@@ -419,13 +438,34 @@ llmproxy/
 ├── cmd/
 │   └── main.go                 # 入口
 ├── internal/
+│   ├── admin/                  # Admin API 模块
+│   │   ├── keystore.go         # API Key 存储（SQLite）
+│   │   ├── server.go           # Admin API 服务器
+│   │   └── usage.go            # 用量存储
+│   ├── auth/                   # 鉴权模块
+│   │   ├── middleware.go       # 鉴权中间件（旧）
+│   │   └── pipeline/           # 鉴权管道（新）
+│   │       ├── provider_*.go   # 各类 Provider
+│   │       ├── executor.go     # 管道执行器
+│   │       └── middleware.go   # 管道中间件
 │   ├── config/                 # 配置解析
 │   │   └── config.go
+│   ├── lb/                     # 负载均衡器
+│   │   ├── round_robin.go
+│   │   ├── least_connections.go
+│   │   └── latency_based.go
 │   ├── proxy/                  # 核心代理引擎
 │   │   ├── handler.go          # 请求处理
-│   │   └── usage_hook.go       # Webhook 上报
-│   ├── lb/                     # 负载均衡器
-│   │   └── roundrobin.go
+│   │   └── usage_reporter.go   # 用量上报
+│   ├── ratelimit/              # 限流模块
+│   │   ├── memory.go           # 内存限流器
+│   │   └── redis_limiter.go    # Redis 限流器
+│   ├── routing/                # 智能路由
+│   │   └── router.go
+│   ├── storage/                # 存储抽象层
+│   │   └── manager.go
+│   ├── types/                  # 公共类型
+│   │   └── status.go
 │   └── metrics/                # Prometheus 指标
 │       └── metrics.go
 ├── deployments/
@@ -458,7 +498,7 @@ LLMProxy 会自动重试（根据配置的 `retry` 次数），失败仅记录�
 
 ### 4. 支持哪些负载均衡策略？
 
-当前支持加权轮询（Weighted Round Robin），后续可扩展最少连接等策略。
+支持 round_robin（轮询）、least_connections（最少连接）、latency_based（延迟优先）三种策略。
 
 ## 📚 文档
 

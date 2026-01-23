@@ -1,69 +1,97 @@
-# 测试配置文件
-listen: ":8000"
+# LLMProxy 本地测试配置
 
-# 后端服务器（使用本地 Ollama）
-backends:
-  - url: "http://host.docker.internal:11434"
-    weight: 10
+server:
+  listen: ":9000"
+  read_timeout: 30s
+  write_timeout: 60s
+  idle_timeout: 120s
 
-# 智能路由配置
-routing:
-  # 自动重试
-  retry:
-    enabled: true
-    max_retries: 2
-    initial_wait: 500ms
-    max_wait: 5s
-    multiplier: 2.0
-  
-  # 负载均衡策略
-  load_balance_strategy: "round_robin"
+log:
+  level: debug
+  format: text
+  output: stdout
+
+# Admin API 配置
+admin:
+  enabled: true
+  token: "test-admin-token-12345"
+  listen: ":9001"
+  db_path: "./data/keys.db"
 
 # 鉴权配置
 auth:
-  enabled: true
-  mode: "first_match"
+  enabled: false
+  mode: first_match
+  header_names:
+    - Authorization
+    - X-API-Key
+  # status_codes:
+  #   disabled:
+  #     http_code: 403
+  #     message: "Your API key has been disabled"
+  #   quota_exceeded:
+  #     http_code: 429
+  #     message: "Your quota has been exceeded"
+  #   expired:
+  #     http_code: 403
+  #     message: "Your API key has expired"
   pipeline:
-    - name: "redis-admin"
-      type: "redis"
+    - name: builtin_auth
+      type: builtin
       enabled: true
-      redis:
-        addr: "llmproxy-admin-redis:6379"
-        password: ""
-        db: 0
-        key_pattern: "llmproxy:key:{api_key}"
-      lua_script: |
-        -- 状态检查 (Admin 用 enabled, 这里转换)
-        if data.status ~= "enabled" and data.status ~= "active" then
-          return {allow = false, message = "API Key 已禁用"}
-        end
-        -- 额度检查 (-1 表示无限)
-        local quota = tonumber(data.quota) or -1
-        local used = tonumber(data.used) or 0
-        if quota > 0 and used >= quota then
-          return {allow = false, message = "额度已用尽"}
-        end
-        return {allow = true, metadata = {user_id = data.user_id}}
+
+# 后端服务列表
+backends:
+  - name: mock-backend
+    url: "https://httpbin.org"
+    weight: 1
+
+# 路由配置
+routing:
+  enabled: true
+  load_balance: round_robin
+  timeout: 60s
 
 # 限流配置
 rate_limit:
-  enabled: true
-  storage: "memory"
-  
-  # 全局限流
-  global:
-    enabled: true
-    requests_per_second: 100
-    burst_size: 200
-  
-  # Key 级限流
-  per_key:
-    enabled: true
-    requests_per_second: 10
-    burst_size: 20
-    max_concurrent: 5
+  enabled: false
 
 # 健康检查
 health_check:
-  interval: 10s
-  path: /
+  enabled: false
+
+# 指标
+metrics:
+  enabled: true
+  path: /metrics
+
+# 请求/访问日志配置
+logging:
+  enabled: true
+  request:
+    enabled: false  # 需要数据库，暂时禁用
+  access:
+    enabled: true
+    format: json
+    output: stdout
+
+# 生命周期钩子配置
+hooks:
+  enabled: true
+  on_request:
+    enabled: true
+    timeout: 100ms
+    script: |
+      log("[Hook] on_request: " .. request.method .. " " .. request.path)
+      return { continue = true }
+  on_response:
+    enabled: true
+    timeout: 100ms
+    script: |
+      log("[Hook] on_response: status=" .. response.status_code .. " latency=" .. response.latency_ms .. "ms")
+      return { continue = true }
+  on_complete:
+    enabled: true
+    timeout: 100ms
+    script: |
+      log("[Hook] on_complete: " .. request.path .. " completed")

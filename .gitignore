@@ -24,9 +24,16 @@ config.yaml
 # IDE
 .vscode/
 .idea/
+.warp/
+.windsurf/
 *.swp
 *.swo
 *~
+
+# Local files
+WARP.md
+data/
+main
 
 # OS
 .DS_Store

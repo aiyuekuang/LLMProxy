@@ -18,76 +18,20 @@ type RedisProvider struct {
 	keyPattern string        // Key 模式
 }
 
-// RedisConfig Redis 配置
-type RedisConfig struct {
-	Storage    string `yaml:"storage"`     // 引用 storage.caches[name]
-	KeyPattern string `yaml:"key_pattern"` // Key 模式
-	
-	// 兼容旧配置
-	Addr     string `yaml:"addr"`      // Redis 地址
-	Password string `yaml:"password"`  // 密码
-	DB       int    `yaml:"db"`        // 数据库编号
-}
-
-// NewRedisProvider 创建 Redis Provider
+// NewRedisProviderWithClient 使用已创建的 Redis 连接创建 Provider
 // 参数：
 //   - name: Provider 名称
-//   - cfg: Redis 配置
+//   - client: Redis 客户端
+//   - keyPattern: Key 模式，如 "llmproxy:key:{api_key}"
+//
 // 返回：
 //   - Provider: Provider 实例
 //   - error: 错误信息
-func NewRedisProvider(name string, cfg *RedisConfig) (Provider, error) {
-	if cfg == nil {
-		return nil, fmt.Errorf("Redis 配置不能为空")
+func NewRedisProviderWithClient(name string, client *redis.Client, keyPattern string) (Provider, error) {
+	if client == nil {
+		return nil, fmt.Errorf("redis 客户端不能为空")
 	}
 
-	// 兼容旧配置：如果直接配置了连接信息
-	if cfg.Storage == "" {
-		client := redis.NewClient(&redis.Options{
-			Addr:     cfg.Addr,
-			Password: cfg.Password,
-			DB:       cfg.DB,
-		})
-
-		// 测试连接
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-
-		if err := client.Ping(ctx).Err(); err != nil {
-			return nil, fmt.Errorf("Redis 连接失败: %w", err)
-		}
-
-		keyPattern := cfg.KeyPattern
-		if keyPattern == "" {
-			keyPattern = "llmproxy:key:{api_key}"
-		}
-
-		return &RedisProvider{
-			BaseProvider: BaseProvider{
-				name:         name,
-				providerType: ProviderTypeRedis,
-			},
-			client:     client,
-			keyPattern: keyPattern,
-		}, nil
-	}
-
-	// 新配置：需要传入已创建的连接
-	return nil, fmt.Errorf("Redis Provider 需要使用 NewRedisProviderWithCache 创建")
-}
-
-// NewRedisProviderWithCache 使用已创建的 Redis 连接创建 Provider
-func NewRedisProviderWithCache(name string, client interface{}, cfg *RedisConfig) (Provider, error) {
-	if cfg == nil {
-		return nil, fmt.Errorf("Redis 配置不能为空")
-	}
-
-	redisClient, ok := client.(*redis.Client)
-	if !ok {
-		return nil, fmt.Errorf("无效的 Redis 客户端类型")
-	}
-
-	keyPattern := cfg.KeyPattern
 	if keyPattern == "" {
 		keyPattern = "llmproxy:key:{api_key}"
 	}
@@ -97,7 +41,7 @@ func NewRedisProviderWithCache(name string, client interface{}, cfg *RedisConfig
 			name:         name,
 			providerType: ProviderTypeRedis,
 		},
-		client:     redisClient,
+		client:     client,
 		keyPattern: keyPattern,
 	}, nil
 }
@@ -106,6 +50,7 @@ func NewRedisProviderWithCache(name string, client interface{}, cfg *RedisConfig
 // 参数：
 //   - ctx: 上下文
 //   - apiKey: API Key 字符串
+//
 // 返回：
 //   - *ProviderResult: 查询结果
 func (r *RedisProvider) Query(ctx context.Context, apiKey string) *ProviderResult {
@@ -117,7 +62,7 @@ func (r *RedisProvider) Query(ctx context.Context, apiKey string) *ProviderResul
 	if err != nil {
 		return &ProviderResult{
 			Found: false,
-			Error: fmt.Errorf("Redis 查询失败: %w", err),
+			Error: fmt.Errorf("redis 查询失败: %w", err),
 		}
 	}
 
@@ -130,7 +75,7 @@ func (r *RedisProvider) Query(ctx context.Context, apiKey string) *ProviderResul
 		if err != nil {
 			return &ProviderResult{
 				Found: false,
-				Error: fmt.Errorf("Redis 查询失败: %w", err),
+				Error: fmt.Errorf("redis 查询失败: %w", err),
 			}
 		}
 
@@ -161,11 +106,10 @@ func (r *RedisProvider) Query(ctx context.Context, apiKey string) *ProviderResul
 	}
 }
 
-// Close 关闭 Redis 连接
+// Close 关闭 Provider
+// 注意：不关闭 Redis 连接，因为连接由 StorageManager 统一管理
 func (r *RedisProvider) Close() error {
-	if r.client != nil {
-		return r.client.Close()
-	}
+	// Redis 连接由 StorageManager 管理，这里不关闭
 	return nil
 }
 
@@ -175,6 +119,7 @@ func (r *RedisProvider) Close() error {
 //   - apiKey: API Key 字符串
 //   - data: 要存储的数据
 //   - expiration: 过期时间（0 表示不过期）
+//
 // 返回：
 //   - error: 错误信息
 func (r *RedisProvider) Set(ctx context.Context, apiKey string, data map[string]interface{}, expiration time.Duration) error {
@@ -187,7 +132,7 @@ func (r *RedisProvider) Set(ctx context.Context, apiKey string, data map[string]
 	}
 
 	if err := r.client.HSet(ctx, key, fields).Err(); err != nil {
-		return fmt.Errorf("Redis 写入失败: %w", err)
+		return fmt.Errorf("redis 写入失败: %w", err)
 	}
 
 	if expiration > 0 {

@@ -6,13 +6,13 @@ import (
 
 // ScriptsConfig Lua 脚本配置
 type ScriptsConfig struct {
-	Routing          *ScriptConfig `yaml:"routing"`           // 路由决策脚本
-	Auth             *ScriptConfig `yaml:"auth"`              // 鉴权决策脚本
-	RequestTransform *ScriptConfig `yaml:"request_transform"` // 请求转换脚本
+	Routing           *ScriptConfig `yaml:"routing"`            // 路由决策脚本
+	Auth              *ScriptConfig `yaml:"auth"`               // 鉴权决策脚本
+	RequestTransform  *ScriptConfig `yaml:"request_transform"`  // 请求转换脚本
 	ResponseTransform *ScriptConfig `yaml:"response_transform"` // 响应转换脚本
-	RateLimit        *ScriptConfig `yaml:"rate_limit"`        // 限流决策脚本
-	Usage            *ScriptConfig `yaml:"usage"`             // 用量计算脚本
-	ErrorHandler     *ScriptConfig `yaml:"error_handler"`     // 错误处理脚本
+	RateLimit         *ScriptConfig `yaml:"rate_limit"`         // 限流决策脚本
+	Usage             *ScriptConfig `yaml:"usage"`              // 用量计算脚本
+	ErrorHandler      *ScriptConfig `yaml:"error_handler"`      // 错误处理脚本
 }
 
 // ScriptConfig 单个脚本配置

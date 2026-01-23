@@ -81,21 +81,25 @@ LLMProxy/
 ├── cmd/
 │   └── main.go                 # 程序入口
 ├── internal/
+│   ├── admin/                  # Admin API 模块
+│   │   ├── keystore.go         # API Key 存储（SQLite）
+│   │   ├── server.go           # Admin API 服务器
+│   │   └── usage.go            # 用量存储
 │   ├── auth/                   # 鉴权模块
 │   │   ├── keystore.go         # Key 存储接口
 │   │   ├── middleware.go       # 鉴权中间件（旧）
-│   │   ├── quota.go            # 额度管理
 │   │   └── pipeline/           # 鉴权管道（新）
 │   │       ├── types.go        # 类型定义
 │   │       ├── provider.go     # Provider 接口
-│   │       ├── provider_file.go    # 配置文件 Provider
-│   │       ├── provider_redis.go   # Redis Provider
-│   │       ├── provider_database.go # 数据库 Provider
-│   │       ├── provider_webhook.go  # Webhook Provider
-│   │       ├── lua_executor.go # Lua 脚本执行器
-│   │       ├── executor.go     # 管道执行器
-│   │       ├── middleware.go   # 管道中间件
-│   │       └── config.go       # 配置转换
+│   │       ├── provider_file.go      # 配置文件 Provider
+│   │       ├── provider_redis.go     # Redis Provider
+│   │       ├── provider_database.go  # 数据库 Provider
+│   │       ├── provider_webhook.go   # Webhook Provider
+│   │       ├── provider_builtin.go   # 内置 SQLite Provider
+│   │       ├── lua_executor.go       # Lua 脚本执行器
+│   │       ├── executor.go           # 管道执行器
+│   │       ├── middleware.go         # 管道中间件
+│   │       └── config.go             # 配置转换
 │   ├── config/
 │   │   └── config.go           # 配置加载
 │   ├── lb/                     # 负载均衡
@@ -106,16 +110,23 @@ LLMProxy/
 │   ├── metrics/
 │   │   └── metrics.go          # Prometheus 指标
 │   ├── proxy/
-│   │   └── handler.go          # 代理处理器
+│   │   ├── handler.go          # 代理处理器
+│   │   └── usage_reporter.go   # 用量上报
 │   ├── ratelimit/              # 限流模块
 │   │   ├── ratelimiter.go      # 限流接口
 │   │   ├── memory.go           # 内存限流器
+│   │   ├── redis_limiter.go    # Redis 限流器
 │   │   └── middleware.go       # 限流中间件
 │   ├── routing/
 │   │   └── router.go           # 智能路由
+│   ├── storage/                # 存储抽象层
+│   │   └── manager.go          # 连接池管理
+│   ├── types/                  # 公共类型
+│   │   └── status.go           # Key 状态等
 │   └── utils/
 │       └── http.go             # HTTP 工具函数
 ├── docs/                       # 文档
+│   ├── configuration.md        # 配置参考
 │   ├── auth-pipeline.md        # 鉴权管道文档
 │   ├── development-guide.md    # 开发文档（本文件）
 │   └── opencode-integration.md # OpenCode 集成文档
@@ -155,10 +166,12 @@ type Provider interface {
 
 | 类型 | 说明 | 数据格式 |
 |------|------|----------|
+| `builtin` | 内置 SQLite | Admin API 管理，需启用 admin |
 | `file` | 配置文件 | YAML 中的 `api_keys` 列表 |
 | `redis` | Redis | Hash 或 JSON String |
 | `database` | 数据库 | MySQL/PostgreSQL/SQLite |
 | `webhook` | HTTP 服务 | JSON 请求/响应 |
+| `static` | 静态配置 | Pipeline 中直接配置 |
 
 #### Lua 脚本执行
 

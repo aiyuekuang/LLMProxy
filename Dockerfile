@@ -1,16 +1,19 @@
 # 构建阶段
-FROM golang:1.22-alpine AS builder
+FROM golang:1.24-alpine AS builder
+
+# 安装 CA 证书和 git（必须在下载依赖之前）
+RUN apk update && apk --no-cache add ca-certificates git
 
 WORKDIR /app
 
 # 复制 go.mod 和 go.sum
 COPY go.mod go.sum* ./
 
+# 下载依赖
+RUN go mod download
+
 # 复制源代码
 COPY . .
-
-# 下载依赖并整理
-RUN go mod tidy && go mod download
 
 # 编译二进制文件（静态链接，优化体积）
 RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -ldflags="-w -s" -o llmproxy ./cmd

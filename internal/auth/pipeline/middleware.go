@@ -13,11 +13,18 @@ import (
 // 参数：
 //   - executor: 管道执行器
 //   - next: 下一个处理器
+//
 // 返回：
 //   - http.HandlerFunc: HTTP 处理函数
 func Middleware(executor *Executor, next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		startTime := time.Now()
+
+		// 0. 检查是否跳过鉴权
+		if executor.ShouldSkip(r.URL.Path) {
+			next(w, r)
+			return
+		}
 
 		// 1. 提取 API Key
 		apiKey := utils.ExtractAPIKeyFromHeaders(r.Header, executor.GetHeaderNames())

@@ -17,6 +17,7 @@ type MiddlewareConfig struct {
 // 参数：
 //   - keyStore: Key 存储
 //   - next: 下一个处理器
+//
 // 返回：
 //   - http.HandlerFunc: HTTP 处理函数
 func Middleware(keyStore KeyStore, next http.HandlerFunc) http.HandlerFunc {
@@ -28,6 +29,7 @@ func Middleware(keyStore KeyStore, next http.HandlerFunc) http.HandlerFunc {
 //   - keyStore: Key 存储
 //   - config: 中间件配置（可选）
 //   - next: 下一个处理器
+//
 // 返回：
 //   - http.HandlerFunc: HTTP 处理函数
 func MiddlewareWithConfig(keyStore KeyStore, config *MiddlewareConfig, next http.HandlerFunc) http.HandlerFunc {
@@ -36,7 +38,7 @@ func MiddlewareWithConfig(keyStore KeyStore, config *MiddlewareConfig, next http
 	if config != nil && len(config.HeaderNames) > 0 {
 		headerNames = config.HeaderNames
 	}
-	
+
 	return func(w http.ResponseWriter, r *http.Request) {
 		// 1. 提取 API Key（支持自定义 Header）
 		apiKey := utils.ExtractAPIKeyFromHeaders(r.Header, headerNames)
@@ -45,7 +47,7 @@ func MiddlewareWithConfig(keyStore KeyStore, config *MiddlewareConfig, next http
 			http.Error(w, `{"error":"Missing API Key"}`, http.StatusUnauthorized)
 			return
 		}
-		
+
 		// 2. 验证 Key 是否存在
 		key, err := keyStore.Get(apiKey)
 		if err != nil {
@@ -53,21 +55,21 @@ func MiddlewareWithConfig(keyStore KeyStore, config *MiddlewareConfig, next http
 			http.Error(w, `{"error":"Invalid API Key"}`, http.StatusUnauthorized)
 			return
 		}
-		
+
 		// 3. 检查状态
 		if key.Status != "active" {
 			log.Printf("鉴权失败: API Key 已禁用: %s", utils.MaskKey(apiKey))
 			http.Error(w, `{"error":"API Key is disabled"}`, http.StatusForbidden)
 			return
 		}
-		
+
 		// 4. 检查过期时间
 		if key.ExpiresAt != nil && time.Now().After(*key.ExpiresAt) {
 			log.Printf("鉴权失败: API Key 已过期: %s", utils.MaskKey(apiKey))
 			http.Error(w, `{"error":"API Key has expired"}`, http.StatusForbidden)
 			return
 		}
-		
+
 		// 5. 检查 IP 白名单/黑名单
 		clientIP := utils.GetClientIP(r.Header.Get("X-Forwarded-For"), r.Header.Get("X-Real-IP"), r.RemoteAddr)
 		if !CheckIPAllowed(clientIP, key.AllowedIPs, key.DeniedIPs) {
@@ -75,21 +77,19 @@ func MiddlewareWithConfig(keyStore KeyStore, config *MiddlewareConfig, next http
 			http.Error(w, `{"error":"IP not allowed"}`, http.StatusForbidden)
 			return
 		}
-		
+
 		// 6. 检查额度
 		if !CheckQuota(key) {
 			log.Printf("鉴权失败: 额度不足: %s", utils.MaskKey(apiKey))
 			http.Error(w, `{"error":"Quota exceeded"}`, http.StatusTooManyRequests)
 			return
 		}
-		
+
 		// 7. 将 Key 信息存入请求上下文（通过 Header 传递）
 		r.Header.Set("X-API-Key-UserID", key.UserID)
 		r.Header.Set("X-API-Key-Name", key.Name)
-		
+
 		// 8. 调用下一个处理器
 		next(w, r)
 	}
 }
-
-

@@ -23,6 +23,7 @@ type AuthResult struct {
 // NewAuthScript 创建鉴权脚本执行器
 // 参数：
 //   - config: 引擎配置
+//
 // 返回：
 //   - *AuthScript: 鉴权脚本执行器
 //   - error: 错误信息
@@ -46,6 +47,7 @@ func NewAuthScript(config *EngineConfig) (*AuthScript, error) {
 //   - requestID: 请求 ID
 //   - keyInfo: API Key 信息
 //   - standardChecks: 标准检查结果
+//
 // 返回：
 //   - *AuthResult: 鉴权结果
 //   - error: 错误信息

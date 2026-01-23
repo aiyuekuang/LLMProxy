@@ -235,6 +235,38 @@ discovery:
 
 ---
 
+## Admin API 配置 (admin)
+
+内置的 API Key 管理接口。
+
+```yaml
+admin:
+  enabled: true
+  token: "your-secure-admin-token"   # 访问 Admin API 需要的 Token
+  listen: ""                         # 监听地址（留空则挂载到主服务器）
+  db_path: "./data/keys.db"          # SQLite 数据库路径
+```
+
+| 字段 | 类型 | 必填 | 说明 |
+|-----|------|-----|------|
+| `enabled` | bool | 是 | 是否启用 Admin API |
+| `token` | string | 是 | 访问令牌，通过 `X-Admin-Token` Header 传递 |
+| `listen` | string | 否 | 独立监听地址，留空则与主服务共用端口 |
+| `db_path` | string | 否 | SQLite 数据库路径，默认 `./data/keys.db` |
+
+### Admin API 端点
+
+| 端点 | 说明 |
+|------|------|
+| `POST /admin/keys/create` | 创建 API Key |
+| `POST /admin/keys/update` | 更新 API Key |
+| `POST /admin/keys/delete` | 删除 API Key |
+| `POST /admin/keys/get` | 获取 API Key |
+| `POST /admin/keys/list` | 列出 API Key |
+| `POST /admin/keys/sync` | 批量同步 API Key |
+
+---
+
 ## 鉴权模块 (auth)
 
 API Key 验证，支持管道模式。
@@ -333,6 +365,22 @@ auth:
         denied_ips: []
         expires_at: null
 ```
+
+#### Builtin (内置 SQLite 存储)
+
+使用 Admin API 管理的 SQLite 数据库，**需要同时启用 `admin.enabled: true`**。
+
+```yaml
+- name: "builtin_auth"
+  type: "builtin"
+  enabled: true
+```
+
+特点：
+- 无需外部数据库依赖
+- 通过 Admin API 管理 Key
+- 数据持久化到本地 SQLite
+- 适合单机部署或开发环境
 
 ---
 
@@ -465,7 +513,32 @@ metrics:
 
 ## 用量上报 (usage)
 
-Token 用量统计上报。
+Token 用量统计上报，支持多种上报器类型。
+
+### 上报器类型
+
+| 类型 | 说明 |
+|-----|------|
+| `builtin` | 内置 SQLite 存储，需要启用 admin |
+| `webhook` | HTTP Webhook 上报 |
+| `database` | 外部数据库存储 |
+
+### Builtin (内置存储)
+
+使用 Admin 模块的 SQLite 数据库，**需要同时启用 `admin.enabled: true`**。
+
+```yaml
+usage:
+  enabled: true
+  reporters:
+    - name: "local"
+      type: "builtin"
+      enabled: true
+      builtin:
+        retention_days: 30      # 数据保留天数，0=永久
+```
+
+### Webhook 上报
 
 ```yaml
 usage:
@@ -479,13 +552,41 @@ usage:
         method: "POST"
         timeout: 5s
         retry: 3
-    
+```
+
+### Database 上报
+
+```yaml
+usage:
+  enabled: true
+  reporters:
     - name: "db"
       type: "database"
-      enabled: false
+      enabled: true
       database:
-        storage: "database"
+        storage: "database"     # 引用 storage.databases[name]
         table: "usage_records"
+```
+
+### 多上报器组合
+
+可同时配置多个上报器：
+
+```yaml
+usage:
+  enabled: true
+  reporters:
+    - name: "local"
+      type: "builtin"
+      enabled: true
+      builtin:
+        retention_days: 30
+    - name: "billing"
+      type: "webhook"
+      enabled: true
+      webhook:
+        url: "https://billing.example.com/usage"
+        timeout: 3s
 ```
 
 ---

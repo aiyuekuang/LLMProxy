@@ -1,17 +1,26 @@
 # Demo 配置 - 使用 Ollama 作为后端
 
-listen: ":8000"
+server:
+  listen: ":8000"
 
 backends:
-  - url: "http://ollama:11434"
+  - name: ollama
+    url: "http://ollama:11434"
     weight: 5
 
-usage_hook:
+# 用量上报
+usage:
   enabled: true
-  url: "http://webhook-receiver:3001/llm-usage"
-  timeout: 1s
-  retry: 2
+  reporters:
+    - name: webhook
+      type: webhook
+      enabled: true
+      webhook:
+        url: "http://webhook-receiver:3001/llm-usage"
+        timeout: 1s
+        retry: 2
 
 health_check:
+  enabled: true
   interval: 10s
   path: /api/tags

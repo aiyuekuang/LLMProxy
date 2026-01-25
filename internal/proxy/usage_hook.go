@@ -222,7 +222,7 @@ func sendUsageToWebhook(reporter *config.UsageReporter, usage *UsageRecord) {
 			time.Sleep(time.Duration(attempt) * 100 * time.Millisecond)
 		}
 
-		if sendWebhookOnce(webhook.URL, timeout, data) {
+		if sendWebhookOnce(webhook.URL, timeout, data, webhook.Headers) {
 			metrics.RecordWebhookSuccess()
 			return
 		}
@@ -237,10 +237,11 @@ func sendUsageToWebhook(reporter *config.UsageReporter, usage *UsageRecord) {
 //   - url: Webhook URL
 //   - timeout: 超时时间
 //   - data: 请求体数据
+//   - headers: 自定义请求头
 //
 // 返回：
 //   - bool: 是否成功
-func sendWebhookOnce(url string, timeout time.Duration, data []byte) bool {
+func sendWebhookOnce(url string, timeout time.Duration, data []byte, headers map[string]string) bool {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
@@ -251,6 +252,11 @@ func sendWebhookOnce(url string, timeout time.Duration, data []byte) bool {
 	}
 
 	req.Header.Set("Content-Type", "application/json")
+
+	// 添加自定义请求头
+	for key, value := range headers {
+		req.Header.Set(key, value)
+	}
 
 	resp, err := webhookClient.Do(req)
 	if err != nil {

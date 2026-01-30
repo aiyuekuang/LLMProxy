@@ -86,7 +86,35 @@ func NewHandlerWithOptions(opts *HandlerOptions) http.HandlerFunc {
 			return
 		}
 
-		// 2. 仅支持 POST 方法
+		// 2. 检查请求方法
+		// /v1/models 支持 GET，其他端点仅支持 POST
+		if r.URL.Path == "/v1/models" {
+			if r.Method != "GET" {
+				http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+				return
+			}
+			// 直接透传 GET 请求到后端
+			backend := opts.LoadBalancer.Next()
+			if backend == nil {
+				http.Error(w, "No healthy backend", http.StatusServiceUnavailable)
+				return
+			}
+			proxyReq, _ := http.NewRequest("GET", backend.URL+r.URL.Path, nil)
+			proxyReq.Header = r.Header.Clone()
+			resp, err := proxyClient.Do(proxyReq)
+			if err != nil {
+				http.Error(w, "Backend error", http.StatusBadGateway)
+				return
+			}
+			defer resp.Body.Close()
+			// 复制响应头和状态码
+			for k, v := range resp.Header {
+				w.Header()[k] = v
+			}
+			w.WriteHeader(resp.StatusCode)
+			io.Copy(w, resp.Body)
+			return
+		}
 		if r.Method != "POST" {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 			return
@@ -400,5 +428,8 @@ func extractAPIKey(r *http.Request) string {
 // 返回：
 //   - bool: 是否为 LLM 端点
 func isLLMEndpoint(path string) bool {
-	return path == "/v1/chat/completions" || path == "/v1/completions"
+	return path == "/v1/chat/completions" || 
+		path == "/v1/completions" ||
+		path == "/v1/embeddings" ||
+		path == "/v1/models"
 }

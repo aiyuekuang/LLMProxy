@@ -142,6 +142,72 @@ For detailed configuration, see: [OpenCode Integration Guide](docs/opencode-inte
 
 ---
 
+## Integration with OpenClaw
+
+[OpenClaw](https://github.com/openclaw/openclaw) is a personal AI assistant that connects to WhatsApp, Telegram, Discord, and other messaging platforms. LLMProxy can serve as its backend proxy for self-hosted LLM inference.
+
+### OpenClaw Configuration (openclaw.json)
+
+```json5
+{
+  models: {
+    providers: {
+      llmproxy: {
+        baseUrl: "http://localhost:8000/v1",
+        apiKey: "your-api-key",  // Optional, LLMProxy handles auth
+        api: "openai-completions",
+        models: [
+          {
+            id: "qwen-coder",
+            name: "Qwen Coder via LLMProxy",
+            reasoning: false,
+            input: ["text"],
+            contextWindow: 128000,
+            maxTokens: 8192
+          }
+        ]
+      }
+    }
+  },
+  agents: {
+    defaults: {
+      model: { primary: "llmproxy/qwen-coder" }
+    }
+  }
+}
+```
+
+### LLMProxy Configuration (config.yaml)
+
+```yaml
+server:
+  listen: ":8000"
+
+backends:
+  - url: "http://vllm:8000"     # Your vLLM/Ollama backend
+    weight: 10
+
+# Optional: Enable auth if needed
+auth:
+  enabled: false  # OpenClaw will send apiKey in Authorization header
+```
+
+### Architecture
+
+```
+WhatsApp/Telegram/Discord → OpenClaw → LLMProxy → vLLM/Ollama
+```
+
+**Benefits:**
+- Zero-buffer streaming for fast responses
+- Load balancing across multiple backends
+- Token usage metering and billing
+- Rate limiting per API key
+
+For more details, see [OpenClaw provider docs](https://docs.openclaw.ai/providers/llmproxy).
+
+---
+
 ## Configuration
 
 ```yaml

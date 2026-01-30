@@ -142,6 +142,72 @@ rate_limit:
 
 ---
 
+## 与 OpenClaw 集成
+
+[OpenClaw](https://github.com/openclaw/openclaw) 是一个个人 AI 助手，可以连接 WhatsApp、Telegram、Discord 等消息平台。LLMProxy 可以作为其后端代理，提供自托管的 LLM 推理服务。
+
+### OpenClaw 配置 (openclaw.json)
+
+```json5
+{
+  models: {
+    providers: {
+      llmproxy: {
+        baseUrl: "http://localhost:8000/v1",
+        apiKey: "your-api-key",  // 可选，LLMProxy 单独处理鉴权
+        api: "openai-completions",
+        models: [
+          {
+            id: "qwen-coder",
+            name: "Qwen Coder via LLMProxy",
+            reasoning: false,
+            input: ["text"],
+            contextWindow: 128000,
+            maxTokens: 8192
+          }
+        ]
+      }
+    }
+  },
+  agents: {
+    defaults: {
+      model: { primary: "llmproxy/qwen-coder" }
+    }
+  }
+}
+```
+
+### LLMProxy 配置 (config.yaml)
+
+```yaml
+server:
+  listen: ":8000"
+
+backends:
+  - url: "http://vllm:8000"     # 你的 vLLM/Ollama 后端
+    weight: 10
+
+# 可选：按需启用鉴权
+auth:
+  enabled: false  # OpenClaw 会在 Authorization header 中发送 apiKey
+```
+
+### 架构图
+
+```
+WhatsApp/Telegram/Discord → OpenClaw → LLMProxy → vLLM/Ollama
+```
+
+**优势：**
+- 零缓冲流式传输，响应更快
+- 多后端负载均衡
+- Token 用量统计和计费
+- 按 API Key 限流
+
+详情请参考 [OpenClaw provider 文档](https://docs.openclaw.ai/providers/llmproxy)。
+
+---
+
 ## 配置说明
 
 ### 基础配置
